@@ -105,7 +105,9 @@ class Microscope(Device):
 
     @command
     def Connect(self) -> None:
-        """Explicitly (re)connect to microscope hardware. Useful after a fault."""
+        """Explicitly (re)connect to microscope hardware. Useful after a fault.
+        Also, sets the timeout fofr Tango device for 2 minutes (for larger things)
+        """
         self._connect()
 
     @command
