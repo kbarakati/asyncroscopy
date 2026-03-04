@@ -263,6 +263,10 @@ class Microscope(Device, ABC):
         # define in the inherit class
         pass
 
+    def _acquire_stem_image_advanced():
+        # define in the inherit class
+        pass
+
 
 
 # ----------------------------------------------------------------------
