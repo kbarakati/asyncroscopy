@@ -22,16 +22,18 @@ import json
 import time
 from typing import Optional
 
-from abc import abstractmethod
-from abc import ABC
+from abc import abstractmethod, ABC, ABCMeta
 
 import numpy as np
 import tango
 from tango import AttrWriteType, DevEncoded, DevState
-from tango.server import Device, attribute, command, device_property
+from tango.server import Device, DeviceMeta, attribute, command, device_property
 
+class CombinedMeta(DeviceMeta, ABCMeta):
+    """Combines Tango DeviceMeta and ABCMeta to allow abstract methods in Devices."""
+    pass
 
-class Microscope(Device, ABC):
+class Microscope(Device, metaclass=CombinedMeta):
     """
     Top-level TEM microscope device.
     Detector-specific settings (dwell time, resolution) are stored in
@@ -85,21 +87,20 @@ class Microscope(Device, ABC):
     # ------------------------------------------------------------------
     # Initialisation
     # ------------------------------------------------------------------
+    @abstractmethod
     def init_device(self) -> None:
-        """Placeholder for more specific device init to be inheritted"""
         print(f"Must define a class-specific init_device() method")
-        pass
 
+    @abstractmethod
     def _connect(self):
-        "Placeholder to be replaced by inheritted class"
         print(f"Must define a class-specific _connect() method")
     
+    @abstractmethod
     def _connect_hardware(self) -> None:
-        "Placeholder to be replaced by inheritted class"
         print(f"Must define a class-specific _connect_hardware() method")
 
+    @abstractmethod
     def _connect_detector_proxies(self) -> None:
-        "Placeholder to be replaced by inheritted class"
         print(f"Must define a class-specific _connect_detector_proxies() method")  
 
     # ------------------------------------------------------------------
