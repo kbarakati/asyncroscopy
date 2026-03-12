@@ -262,11 +262,10 @@ class Microscope(Device, metaclass=CombinedMeta):
     
     def _acquire_stem_image():
         # define in the inherit class
-        pass
+        raise NotImplementedError
 
     def _acquire_stem_image_advanced():
-        # define in the inherit class
-        pass
+        raise NotImplementedError
 
 
 
