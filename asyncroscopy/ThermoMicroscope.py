@@ -59,6 +59,22 @@ class ThermoMicroscope(Microscope):
     """
 
     # ------------------------------------------------------------------
+    # Device properties — configure in Tango DB per deployment
+    # ------------------------------------------------------------------
+
+    autoscript_host_ip = device_property(
+        dtype=str,
+        default_value="10.46.217.241",
+        doc="Hostname or IP of the AutoScript microscope server",
+    )
+
+    autoscript_host_port = device_property(
+        dtype=int,
+        default_value=9095,
+        doc="Hostname or IP of the AutoScript microscope server",
+    )
+
+    # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
     # not finishded
@@ -142,8 +158,8 @@ class ThermoMicroscope(Microscope):
     def _acquire_stem_image(
         self,
         detector_name: str,
-        width: int,
-        height: int,
+        image_width: int,
+        image_height: int,
         dwell_time: float,
     ) -> np.ndarray:
         """
@@ -152,19 +168,29 @@ class ThermoMicroscope(Microscope):
         Falls back to a simulated image when AutoScript is unavailable.
         """
         if self._microscope is not None:
-            # Real AutoScript path
+            # TODO move all of this to the detector
             if detector_name.upper() == "HAADF":
+                haadf = self._detector_proxies['haadf']
                 detector_type = DetectorType.HAADF # :TODO --> make it general and check
-                adorned = self._microscope.acquisition.acquire_stem_image(
-                    detector_type, ImageSize.PRESET_1024, dwell_time
-                )
-                return adorned.data
-            # pass  # remove this line when uncommenting above
+                dwell_time = haadf.read_attribute("dwell_time").value
+                image_width = haadf.read_attribute("image_width").value
+                if image_width == 256:
+                    imsize = ImageSize.PRESET_256
+                elif image_width == 512:
+                    imsize = ImageSize.PRESET_512
+                elif image_width == 1024:
+                    imsize = ImageSize.PRESET_1024
+                elif image_width == 2048:
+                    imsize = ImageSize.PRESET_2048
+                elif image_width == 4096:
+                    imsize = ImageSize.PRESET_4096
 
-        # Simulation fallback
-        self.warn_stream("Simulating image acquisition (AutoScript not connected)")
-        rng = np.random.default_rng()
-        return rng.integers(0, 65535, size=(height, width), dtype=np.uint16)
+                # take image
+                adorned = self._microscope.acquisition.acquire_stem_image(
+                    detector_type, imsize, dwell_time
+                )
+                # adorned.metadata TODO get this and pass it on
+                return adorned.data
 
     def _acquire_stem_image_advanced(
         self,
@@ -220,9 +246,27 @@ class ThermoMicroscope(Microscope):
         return [rng.integers(0, 65535, size=(height, width), dtype=np.uint16) 
                 for _ in detector_names]
 
+    
+    def _place_beam(self, position) -> None:
+        """
+        sets resting beam position, [0:1]
+        """
+        x = float(position[0])
+        y = float(position[1])
+        print(x,y)
+        self._microscope.optics.paused_scan_beam_position = [x, y]
 
 
+    def _blank_beam(self) -> None:
+        """blank beam"""
+        self._microscope.optics.blanker.blank()
 
+
+    def _unblank_beam(self) -> None:
+        """
+        unblank beam
+        """
+        self._microscope.optics.blanker.unblank()
 # ----------------------------------------------------------------------
 # Server entry point
 # ----------------------------------------------------------------------

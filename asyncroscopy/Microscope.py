@@ -26,7 +26,7 @@ from abc import abstractmethod, ABC, ABCMeta
 
 import numpy as np
 import tango
-from tango import AttrWriteType, DevEncoded, DevState
+from tango import AttrWriteType, DevEncoded, DevState, DevVarFloatArray
 from tango.server import Device, DeviceMeta, attribute, command, device_property
 
 class CombinedMeta(DeviceMeta, ABCMeta):
@@ -43,18 +43,6 @@ class Microscope(Device, metaclass=CombinedMeta):
     # ------------------------------------------------------------------
     # Device properties — configure in Tango DB per deployment
     # ------------------------------------------------------------------
-
-    autoscript_host_ip = device_property(
-        dtype=str,
-        default_value="localhost",
-        doc="Hostname or IP of the AutoScript microscope server",
-    )
-
-    autoscript_host_port = device_property(
-        dtype=int,
-        default_value=9090,
-        doc="Hostname or IP of the AutoScript microscope server",
-    )
 
     haadf_device_address = device_property(
         dtype=str,
@@ -255,6 +243,26 @@ class Microscope(Device, metaclass=CombinedMeta):
         
         meta = {"shape": list(img_data.shape), "dtype": str(img_data.dtype)}
         return json.dumps(meta), img_data.tobytes()
+    
+    @command(dtype_in=DevVarFloatArray, dtype_out=None)
+    def place_beam(self, position) -> None:
+        """
+        sets resting beam position, [0:1]
+        """
+        self._place_beam(position)
+
+    @command()
+    def blank_beam(self) -> None:
+        """blank beam"""
+        self._blank_beam()
+
+    @command()
+    def unblank_beam(self) -> None:
+        """
+        unblank beam
+        """
+        self._unblank_beam()
+
 
     # ------------------------------------------------------------------
     # Internal acquisition helpers
@@ -269,6 +277,17 @@ class Microscope(Device, metaclass=CombinedMeta):
         print("Get image with more flexible settings")
         pass
 
+    def _place_beam():
+        # define in the inherit class
+        pass
+
+    def _blank_beam():
+        # define in the inherit class
+        pass
+
+    def _unblank_beam():
+        # define in the inherit class
+        pass
 
 
 # ----------------------------------------------------------------------
