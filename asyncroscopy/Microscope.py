@@ -50,6 +50,13 @@ class Microscope(Device, metaclass=CombinedMeta):
             "DB mode: 'test/detector/haadf' "
             "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/haadf#dbase=no'",
 )
+    
+    eds_device_address = device_property(
+        dtype=str,
+        doc="Tango device address for the EDS settings device. "
+            "DB mode: 'test/detector/eds' "
+            "No-DB mode: 'tango://127.0.0.1:8887/test/nodb/haadf#dbase=no'",
+)
     advanced_acquisition_device_address = device_property(
         dtype=str,
         doc="Tango device address for the HAADF settings device. "
@@ -117,6 +124,52 @@ class Microscope(Device, metaclass=CombinedMeta):
         self._microscope = None
         self.set_state(DevState.OFF)
         self.info_stream("Disconnected from microscope hardware")
+
+
+    @command(dtype_in=str, dtype_out=DevEncoded)
+    def get_spectrum(self, detector_name: str) -> tuple[str, bytes]:
+        """
+        Acquire a single spectrum from the named detector with the specified exposure time.
+
+        Parameters
+        ----------
+        detector_name:
+            Name of the detector, e.g. "eds".
+
+        Returns
+        -------
+        DevEncoded = (json_metadata, raw_bytes)
+            json_metadata includes: shape, dtype, dwell_time, detector,
+            timestamp, and any other relevant metadata.
+            raw_bytes is the flat numpy array bytes; reshape using shape from metadata.
+        """
+
+        detector_name = detector_name.lower().strip()
+        proxy = self._detector_proxies.get(detector_name)
+        # TODO move this to the database?
+        if proxy is None:
+            tango.Except.throw_exception(
+                "UnknownDetector",
+                f"No proxy found for detector '{detector_name}'. "
+                f"Available: {list(self._detector_proxies.keys())}",
+                "Microscope.get_image()",
+            )
+        
+        # Read acquisition settings from the detector device
+        exposure_time = proxy.exposure_time # float
+
+        adorned_spectrum = self._acquire_spectrum(detector_name, exposure_time)
+
+        metadata = {
+            "detector": detector_name,
+            "dtype": str(adorned_spectrum.dtype),
+            "dwell_time": exposure_time,
+            "timestamp": time.time(),
+            # TODO: add metadata from adorned_spectrum.metadata when using real AutoScript
+        }
+
+        return json.dumps(metadata), adorned_spectrum.tobytes()
+
 
     @command(dtype_in=str, dtype_out=DevEncoded)#In PyTango, DevEncoded is a special Tango data type designed to send binary data + a small description string together as a single return value.
     def get_image(self, detector_name: str) -> tuple[str, bytes]:

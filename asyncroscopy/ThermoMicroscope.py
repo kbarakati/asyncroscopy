@@ -38,10 +38,11 @@ from tango.server import Device, attribute, command, device_property
 # on a development machine without AutoScript installed.
 try:
     from autoscript_tem_microscope_client import TemMicroscopeClient
-    from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize
-    from autoscript_tem_microscope_client.structures import Region, Rectangle
-    from autoscript_tem_microscope_client.enumerations import RegionCoordinateSystem
-    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings
+    from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize, EdsDetectorType
+    from autoscript_tem_microscope_client.enumerations import RegionCoordinateSystem, ExposureTimeType
+    from autoscript_tem_microscope_client.structures import Region, Rectangle, AdornedSpectrum
+    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings, EdsAcquisitionSettings
+
     _AUTOSCRIPT_AVAILABLE = True
 except ImportError:
     _AUTOSCRIPT_AVAILABLE = False
@@ -99,6 +100,7 @@ class ThermoMicroscope(Microscope):
         # Dict mapping detector name string → DeviceProxy
         # Populated in _connect_detector_proxies
         self._detector_proxies: dict[str, tango.DeviceProxy] = {}
+        # TODO move to base
 
         self._connect()
 
@@ -128,8 +130,7 @@ class ThermoMicroscope(Microscope):
         addresses: dict[str, str] = {
             "haadf": self.haadf_device_address,
             "AdvancedAcquistion": self.advanced_acquisition_device_address,
-            # "BF"
-            # "eds":  self.eds_device_address,
+            "eds":  self.eds_device_address,
         }
         print(addresses)
         for name, address in addresses.items():
@@ -246,7 +247,29 @@ class ThermoMicroscope(Microscope):
         return [rng.integers(0, 65535, size=(height, width), dtype=np.uint16) 
                 for _ in detector_names]
 
-    
+    def _acquire_spectrum(self, detector_name: str, exposure_time: float) -> np.ndarray:
+        if detector_name.upper() == "EDS":
+            # set up settings object
+            settings = EdsAcquisitionSettings()
+            settings.eds_detector = EdsDetectorType.SUPER_X
+            settings.dispersion = 5 # int
+            settings.shaping_time = 3e-6 # float
+            settings.exposure_time = exposure_time
+            settings.exposure_time_type = ExposureTimeType.LIVE_TIME
+
+            # take eds
+            spectrum = self._microscope.analysis.eds.acquire_spectrum(settings)
+            handle_byte_order = True
+            if handle_byte_order == True:
+                dt = np.dtype("uint32").newbyteorder("<")
+                spectrum = np.frombuffer(spectrum._raw_data, dtype=dt)
+
+        else:
+            print(f"Detector {detector_name} not supported for spectroscopy")
+
+        return spectrum
+
+
     def _place_beam(self, position) -> None:
         """
         sets resting beam position, [0:1]
