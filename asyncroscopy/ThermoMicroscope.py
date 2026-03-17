@@ -90,20 +90,6 @@ class ThermoMicroscope(Microscope):
     # Initialisation
     # ------------------------------------------------------------------
 
-    def init_device(self) -> None:
-        Device.init_device(self)
-        self.set_state(DevState.INIT)
-
-        self._microscope: Optional[object] = None  # TemMicroscopeClient instance
-        self._stem_mode: bool = False
-
-        # Dict mapping detector name string → DeviceProxy
-        # Populated in _connect_detector_proxies
-        self._detector_proxies: dict[str, tango.DeviceProxy] = {}
-        # TODO move to base
-
-        self._connect()
-
     def _connect(self):
         self._connect_hardware()
         self._connect_detector_proxies()

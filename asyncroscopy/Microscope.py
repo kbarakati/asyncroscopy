@@ -82,9 +82,18 @@ class Microscope(Device, metaclass=CombinedMeta):
     # ------------------------------------------------------------------
     # Initialisation
     # ------------------------------------------------------------------
-    @abstractmethod
     def init_device(self) -> None:
-        print(f"Must define a class-specific init_device() method")
+        Device.init_device(self)
+        self.set_state(DevState.INIT)
+
+        self._microscope: Optional[object] = None  # TemMicroscopeClient instance
+        self._stem_mode: bool = False
+
+        # Dict mapping detector name string → DeviceProxy
+        # Populated in _connect_detector_proxies
+        self._detector_proxies: dict[str, tango.DeviceProxy] = {}
+
+        self._connect()
 
     @abstractmethod
     def _connect(self):
@@ -146,14 +155,6 @@ class Microscope(Device, metaclass=CombinedMeta):
 
         detector_name = detector_name.lower().strip()
         proxy = self._detector_proxies.get(detector_name)
-        # TODO move this to the database?
-        if proxy is None:
-            tango.Except.throw_exception(
-                "UnknownDetector",
-                f"No proxy found for detector '{detector_name}'. "
-                f"Available: {list(self._detector_proxies.keys())}",
-                "Microscope.get_image()",
-            )
         
         # Read acquisition settings from the detector device
         exposure_time = proxy.exposure_time # float
@@ -192,13 +193,6 @@ class Microscope(Device, metaclass=CombinedMeta):
         detector_name = detector_name.lower().strip()
 
         proxy = self._detector_proxies.get(detector_name)
-        if proxy is None:
-            tango.Except.throw_exception(
-                "UnknownDetector",
-                f"No proxy found for detector '{detector_name}'. "
-                f"Available: {list(self._detector_proxies.keys())}",
-                "Microscope.get_image()",
-            )
 
         # Read acquisition settings from the detector device
         dwell_time: float = proxy.dwell_time
@@ -238,13 +232,6 @@ class Microscope(Device, metaclass=CombinedMeta):
         """
         # Normalize and validate
         detector_names = [name.lower().strip() for name in detector_names]
-        for name in detector_names:
-            if name not in self._detector_proxies:
-                tango.Except.throw_exception(
-                    "UnknownDetector",
-                    f"Unknown detector: {name}",
-                    "get_images()"
-                )
         
         # Get settings from AdvancedAcquisition device
         adv_acq_proxy = self._detector_proxies.get("AdvancedAcquistion")
