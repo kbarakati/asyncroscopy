@@ -11,6 +11,7 @@ This avoids:
 - Flaky multi-context issues from spinning up multiple separate servers
 """
 
+import numpy as np
 import pytest
 import tango
 from tango.test_context import MultiDeviceTestContext
@@ -18,6 +19,7 @@ from tango.test_context import MultiDeviceTestContext
 # Import device classes to test
 from asyncroscopy.detectors.HAADF import HAADF
 from asyncroscopy.ThermoDigitalTwin import ThermoDigitalTwin
+from asyncroscopy.ThermoMicroscope import ThermoMicroscope
 
 
 # We use ThermoDigitalTwin as our simulated microscope for all tests.
@@ -53,6 +55,19 @@ def tango_ctx():
                 }
             ],
         },
+
+        {
+            "class": ThermoMicroscope,
+            "devices": [
+                {
+                    "name": "test/nodb/thermomicroscope",
+                    "properties": {
+                        "simulate_hardware_for_tests": True,
+                        "haadf_device_address": "test/nodb/haadf",
+                    },
+                }
+            ],
+        },
     ]
 
     # process=False keeps everything in the same process (fast, debuggable).
@@ -63,16 +78,36 @@ def tango_ctx():
         yield ctx
 
 
-@pytest.fixture(scope="session")
-def haadf_proxy(tango_ctx) -> tango.DeviceProxy:
-    return tango.DeviceProxy("test/nodb/haadf")
-
 
 @pytest.fixture(scope="session")
-def twin_proxy(tango_ctx) -> tango.DeviceProxy:
-    return tango.DeviceProxy("test/nodb/twin")
+def haadf_proxy(tango_ctx):
+    return tango.DeviceProxy(tango_ctx.get_device_access("test/nodb/haadf"))
 
 
 @pytest.fixture(scope="session")
-def microscope_proxy(twin_proxy):
-    return twin_proxy
+def twin_proxy(tango_ctx):
+    return tango.DeviceProxy(tango_ctx.get_device_access("test/nodb/twin"))
+
+
+@pytest.fixture(scope="session")
+def thermo_proxy(tango_ctx):
+    return tango.DeviceProxy(tango_ctx.get_device_access("test/nodb/thermomicroscope"))
+
+
+
+@pytest.fixture
+def patched_single_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Patch ThermoMicroscope._acquire_stem_image so get_image() works
+    without AutoScript/hardware.
+    """
+    def fake_acquire(self, detector_name : str, image_width: int, image_height: int, dwell_time: float):
+        # Deterministic image makes tests stable
+        arr = np.arange(image_height * image_width, dtype=np.uint16)
+        return arr.reshape(image_height, image_width)
+
+    monkeypatch.setattr(
+        ThermoMicroscope,
+        "_acquire_stem_image",
+        fake_acquire,
+    )

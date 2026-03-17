@@ -73,7 +73,11 @@ class ThermoMicroscope(Microscope):
         default_value=9095,
         doc="Hostname or IP of the AutoScript microscope server",
     )
-
+    simulate_hardware_for_tests = device_property(
+        dtype=bool,
+        default_value=False,
+        doc="If True, skip AutoScript connection and use simulation."
+    )
     # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
@@ -109,6 +113,10 @@ class ThermoMicroscope(Microscope):
 
     def _connect_hardware(self) -> None:
         """Establish AutoScript connection from MPC -> hardware."""
+        if self.simulate_hardware_for_tests:
+            self.warn_stream("Simulation mode: skipping AutoScript connection")
+            self._microscope = None
+            return
         if not _AUTOSCRIPT_AVAILABLE:
             self.warn_stream("AutoScript not available")
             return
@@ -152,8 +160,9 @@ class ThermoMicroscope(Microscope):
         return self._manufacturer
 
     # ------------------------------------------------------------------
-    # Commands
+    # Internal acquisition helpers
     # ------------------------------------------------------------------
+    # TODO:if self._microscope is not None: checks should go to init functions than sitting in commands 
 
     def _acquire_stem_image(
         self,
@@ -251,22 +260,25 @@ class ThermoMicroscope(Microscope):
         """
         sets resting beam position, [0:1]
         """
-        x = float(position[0])
-        y = float(position[1])
-        print(x,y)
-        self._microscope.optics.paused_scan_beam_position = [x, y]
+        if self._microscope is not None:
+            x = float(position[0])
+            y = float(position[1])
+            print(x,y)
+            self._microscope.optics.paused_scan_beam_position = [x, y]
 
 
     def _blank_beam(self) -> None:
         """blank beam"""
-        self._microscope.optics.blanker.blank()
+        if self._microscope is not None:
+            self._microscope.optics.blanker.blank()
 
 
     def _unblank_beam(self) -> None:
         """
         unblank beam
         """
-        self._microscope.optics.blanker.unblank()
+        if self._microscope is not None:
+            self._microscope.optics.blanker.unblank()
 # ----------------------------------------------------------------------
 # Server entry point
 # ----------------------------------------------------------------------
