@@ -73,11 +73,7 @@ class ThermoMicroscope(Microscope):
         default_value=9095,
         doc="Hostname or IP of the AutoScript microscope server",
     )
-    simulate_hardware_for_tests = device_property(
-        dtype=bool,
-        default_value=False,
-        doc="If True, skip AutoScript connection and use simulation."
-    )
+
     # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
@@ -100,10 +96,6 @@ class ThermoMicroscope(Microscope):
 
     def _connect_hardware(self) -> None:
         """Establish AutoScript connection from MPC -> hardware."""
-        if self.simulate_hardware_for_tests:
-            self.warn_stream("Simulation mode: skipping AutoScript connection")
-            self._microscope = None
-            return
         if not _AUTOSCRIPT_AVAILABLE:
             self.warn_stream("AutoScript not available")
             return
@@ -125,6 +117,7 @@ class ThermoMicroscope(Microscope):
             "AdvancedAcquistion": self.advanced_acquisition_device_address,
             "eds":  self.eds_device_address,
             "stage": self.stage_device_address,
+            "scan": self.scan_device_address,
         }
         print(addresses)
         for name, address in addresses.items():
@@ -151,27 +144,21 @@ class ThermoMicroscope(Microscope):
     # ------------------------------------------------------------------
     # TODO:if self._microscope is not None: checks should go to init functions than sitting in commands 
 
-    def _acquire_stem_image(self,detector_name: str,) -> np.ndarray:
+    def _acquire_stem_image(self, imsize: int, dwell_time: float, detector_list: list) -> np.ndarray:
         """
         Call AutoScript acquisition and return numpy array.
 
         Falls back to a simulated image when AutoScript is unavailable.
         """
         if self._microscope is not None:
-            # TODO move all of this to the detector
-            if detector_name.upper() == "HAADF":
-                haadf = self._detector_proxies['haadf']
-                detector_type = DetectorType.HAADF # :TODO --> make it general and check
-                dwell_time = haadf.read_attribute("dwell_time").value
-                imsize = haadf.read_attribute("imsize").value
-                imsize = int(imsize)
+            # check detectors in detector_list
+            detector_list = [d.upper() for d in detector_list] # must be caps for AutoScript
+            detector_type = 'HAADF'
 
-                # take image
-                adorned = self._microscope.acquisition.acquire_stem_image(
-                    detector_type, imsize, dwell_time
-                )
-                # adorned.metadata TODO get this and pass it on
-                return adorned.data
+            # take image
+            adorned = self._microscope.acquisition.acquire_stem_image(detector_type, imsize, dwell_time)
+            # adorned.metadata TODO get this and pass it on
+            return adorned.data
 
     def _acquire_stem_image_advanced(
         self,
@@ -234,6 +221,7 @@ class ThermoMicroscope(Microscope):
             settings.eds_detector = EdsDetectorType.SUPER_X
             settings.dispersion = 5 # int
             settings.shaping_time = 3e-6 # float
+            # TODO: don't hardcode these
             settings.exposure_time = exposure_time
             settings.exposure_time_type = ExposureTimeType.LIVE_TIME
 

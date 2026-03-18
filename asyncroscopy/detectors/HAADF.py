@@ -42,7 +42,6 @@ class HAADF(Device):
         doc="Acquisition width in pixels (should match an AutoScript ImageSize preset)",
     )
 
-
     # ------------------------------------------------------------------
     # Initialisation
     # ------------------------------------------------------------------
@@ -53,7 +52,7 @@ class HAADF(Device):
 
         # Sensible defaults — operators override via Tango DB or client writes
         self._dwell_time: float = 1e-6   # 1 µs
-        self._imsize: int = 1024
+        self._imsize: int = 512
 
         self.info_stream("HAADF device initialised")
 
@@ -68,10 +67,10 @@ class HAADF(Device):
         self._dwell_time = value
 
     def read_imsize(self) -> int:
-        return self._image_width
+        return self._imsize
 
     def write_imsize(self, value: int) -> None:
-        self._image_width = value
+        self._imsize = value
 
 
 # ----------------------------------------------------------------------

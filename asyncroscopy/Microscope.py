@@ -51,6 +51,13 @@ class Microscope(Device, metaclass=CombinedMeta):
             "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/haadf#dbase=no'",
     )
 
+    scan_device_address = device_property(
+        dtype=str,
+        doc="Tango device address for the SCAN settings device. "
+            "DB mode: 'test/detector/scan' "
+            "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/scan#dbase=no'",
+    )
+
     eds_device_address = device_property(
         dtype=str,
         doc="Tango device address for the EDS settings device. "
@@ -179,8 +186,8 @@ class Microscope(Device, metaclass=CombinedMeta):
         return json.dumps(metadata), adorned_spectrum.tobytes()
 
 
-    @command(dtype_in=str, dtype_out=DevEncoded)#In PyTango, DevEncoded is a special Tango data type designed to send binary data + a small description string together as a single return value.
-    def get_image(self, detector_name: str) -> tuple[str, bytes]:
+    @command(dtype_out=DevEncoded)#In PyTango, DevEncoded is a special Tango data type designed to send binary data + a small description string together as a single return value.
+    def get_scanned_image(self) -> tuple[str, bytes]:
         """
         Acquire a single STEM image from the named detector.
 
@@ -197,21 +204,17 @@ class Microscope(Device, metaclass=CombinedMeta):
             timestamp, and any other relevant metadata.
             raw_bytes is the flat numpy array bytes; reshape using shape from metadata.
         """
-        detector_name = detector_name.lower().strip()
+        # check active detectors
+        scan = self._detector_proxies.get("scan")
 
-        proxy = self._detector_proxies.get(detector_name)
+        # Read scan settings from the detector device
+        dwell_time=scan.dwell_time
+        imsize=scan.imsize
 
-        # Read acquisition settings from the detector device
-        dwell_time: float = proxy.dwell_time
-        imsize: int  = proxy.imsize
-
-
-        # TODO: map (width, height) → AutoScript ImageSize enum
-
-        adorned_image = self._acquire_stem_image(detector_name)
+        adorned_image = self._acquire_stem_image(imsize, dwell_time, ['haadf'])
 
         metadata = {
-            "detector": detector_name,
+            "detector": 'haadf',
             "shape": [imsize, imsize],
             "dtype": str(adorned_image.dtype),
             "dwell_time": dwell_time,

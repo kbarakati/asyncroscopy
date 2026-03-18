@@ -10,44 +10,36 @@ from tango import AttrWriteType, DevState
 from tango.server import Device, attribute
 
 
-class BF(Device):
-    """BF detector settings device."""
+class CAMERA(Device):
+    """CAMERA detector settings device."""
 
     # ------------------------------------------------------------------
     # Device properties — set per-deployment in the Tango DB
     # ------------------------------------------------------------------
 
-    # (no hardware connection properties needed — HAADF is settings-only)
+    # (no hardware connection properties needed — CAMERA is settings-only)
 
     # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
 
-    dwell_time = attribute(
-        label="Dwell Time",
+    exposure_time = attribute(
+        label="Exposure Time",
         dtype=float,
         access=AttrWriteType.READ_WRITE,
         unit="s",
         format="%e",
-        min_value=1e-9,
-        max_value=1e-3,
+        min_value=1e-7,
+        max_value=10,
         doc="Per-pixel dwell time in seconds (e.g. 1e-6 = 1 µs)",
     )
 
-    image_width = attribute(
-        label="Image Width",
+    imsize = attribute(
+        label="Image Size",
         dtype=int,
         access=AttrWriteType.READ_WRITE,
         unit="px",
         doc="Acquisition width in pixels (should match an AutoScript ImageSize preset)",
-    )
-
-    image_height = attribute(
-        label="Image Height",
-        dtype=int,
-        access=AttrWriteType.READ_WRITE,
-        unit="px",
-        doc="Acquisition height in pixels",
     )
 
     # ------------------------------------------------------------------
@@ -59,33 +51,26 @@ class BF(Device):
         self.set_state(DevState.ON)
 
         # Sensible defaults — operators override via Tango DB or client writes
-        self._dwell_time: float = 1e-6   # 1 µs
-        self._image_width: int = 1024
-        self._image_height: int = 1024
+        self._exposure_time: float = 1e-3   # 1 ms
+        self._imsize: int = 1024
 
-        self.info_stream("HAADF device initialised")
+        self.info_stream("CAMERA device initialised")
 
     # ------------------------------------------------------------------
     # Attribute read / write
     # ------------------------------------------------------------------
 
-    def read_dwell_time(self) -> float:
-        return self._dwell_time
+    def read_exposure_time(self) -> float:
+        return self._exposure_time
 
-    def write_dwell_time(self, value: float) -> None:
-        self._dwell_time = value
+    def write_exposure_time(self, value: float) -> None:
+        self._exposure_time = value
 
-    def read_image_width(self) -> int:
-        return self._image_width
+    def read_imsize(self) -> int:
+        return self._imsize
 
-    def write_image_width(self, value: int) -> None:
-        self._image_width = value
-
-    def read_image_height(self) -> int:
-        return self._image_height
-
-    def write_image_height(self, value: int) -> None:
-        self._image_height = value
+    def write_imsize(self, value: int) -> None:
+        self._imsize = value
 
 
 # ----------------------------------------------------------------------
@@ -93,4 +78,4 @@ class BF(Device):
 # ----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    BF.run_server()
+    CAMERA.run_server()
