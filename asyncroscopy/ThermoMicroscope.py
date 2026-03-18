@@ -26,6 +26,7 @@ Client-side reconstruction example::
 
 import json
 import time
+import math
 from typing import Optional
 
 import numpy as np
@@ -38,10 +39,11 @@ from tango.server import Device, attribute, command, device_property
 # on a development machine without AutoScript installed.
 try:
     from autoscript_tem_microscope_client import TemMicroscopeClient
-    from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize
-    from autoscript_tem_microscope_client.structures import Region, Rectangle
-    from autoscript_tem_microscope_client.enumerations import RegionCoordinateSystem
-    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings
+    from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize, EdsDetectorType
+    from autoscript_tem_microscope_client.enumerations import RegionCoordinateSystem, ExposureTimeType
+    from autoscript_tem_microscope_client.structures import Region, Rectangle, AdornedSpectrum
+    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings, EdsAcquisitionSettings
+
     _AUTOSCRIPT_AVAILABLE = True
 except ImportError:
     _AUTOSCRIPT_AVAILABLE = False
@@ -61,13 +63,11 @@ class ThermoMicroscope(Microscope):
     # ------------------------------------------------------------------
     # Device properties — configure in Tango DB per deployment
     # ------------------------------------------------------------------
-
     autoscript_host_ip = device_property(
         dtype=str,
         default_value="10.46.217.241",
         doc="Hostname or IP of the AutoScript microscope server",
     )
-
     autoscript_host_port = device_property(
         dtype=int,
         default_value=9095,
@@ -92,19 +92,6 @@ class ThermoMicroscope(Microscope):
     # ------------------------------------------------------------------
     # Initialisation
     # ------------------------------------------------------------------
-
-    def init_device(self) -> None:
-        Device.init_device(self)
-        self.set_state(DevState.INIT)
-
-        self._microscope: Optional[object] = None  # TemMicroscopeClient instance
-        self._stem_mode: bool = False
-
-        # Dict mapping detector name string → DeviceProxy
-        # Populated in _connect_detector_proxies
-        self._detector_proxies: dict[str, tango.DeviceProxy] = {}
-
-        self._connect()
 
     def _connect(self):
         self._connect_hardware()
@@ -136,8 +123,8 @@ class ThermoMicroscope(Microscope):
         addresses: dict[str, str] = {
             "haadf": self.haadf_device_address,
             "AdvancedAcquistion": self.advanced_acquisition_device_address,
-            # "BF"
-            # "eds":  self.eds_device_address,
+            "eds":  self.eds_device_address,
+            "stage": self.stage_device_address,
         }
         print(addresses)
         for name, address in addresses.items():
@@ -183,16 +170,18 @@ class ThermoMicroscope(Microscope):
                 detector_type = DetectorType.HAADF # :TODO --> make it general and check
                 dwell_time = haadf.read_attribute("dwell_time").value
                 image_width = haadf.read_attribute("image_width").value
-                if image_width == 256:
-                    imsize = ImageSize.PRESET_256
-                elif image_width == 512:
-                    imsize = ImageSize.PRESET_512
-                elif image_width == 1024:
-                    imsize = ImageSize.PRESET_1024
-                elif image_width == 2048:
-                    imsize = ImageSize.PRESET_2048
-                elif image_width == 4096:
-                    imsize = ImageSize.PRESET_4096
+                imsize = int(image_width)
+                # print(ImageSize.PRESET_256)
+                # if image_width == 256:
+                    # imsize = ImageSize.PRESET_256
+                # elif image_width == 512:
+                #     imsize = ImageSize.PRESET_512
+                # elif image_width == 1024:
+                #     imsize = ImageSize.PRESET_1024
+                # elif image_width == 2048:
+                #     imsize = ImageSize.PRESET_2048
+                # elif image_width == 4096:
+                #     imsize = ImageSize.PRESET_4096
 
                 # take image
                 adorned = self._microscope.acquisition.acquire_stem_image(
@@ -255,7 +244,29 @@ class ThermoMicroscope(Microscope):
         return [rng.integers(0, 65535, size=(height, width), dtype=np.uint16) 
                 for _ in detector_names]
 
-    
+    def _acquire_spectrum(self, detector_name: str, exposure_time: float) -> np.ndarray:
+        if detector_name.upper() == "EDS":
+            # set up settings object
+            settings = EdsAcquisitionSettings()
+            settings.eds_detector = EdsDetectorType.SUPER_X
+            settings.dispersion = 5 # int
+            settings.shaping_time = 3e-6 # float
+            settings.exposure_time = exposure_time
+            settings.exposure_time_type = ExposureTimeType.LIVE_TIME
+
+            # take eds
+            spectrum = self._microscope.analysis.eds.acquire_spectrum(settings)
+            handle_byte_order = True
+            if handle_byte_order == True:
+                dt = np.dtype("uint32").newbyteorder("<")
+                spectrum = np.frombuffer(spectrum._raw_data, dtype=dt)
+
+        else:
+            print(f"Detector {detector_name} not supported for spectroscopy")
+
+        return spectrum
+
+
     def _place_beam(self, position) -> None:
         """
         sets resting beam position, [0:1]
@@ -266,6 +277,9 @@ class ThermoMicroscope(Microscope):
             print(x,y)
             self._microscope.optics.paused_scan_beam_position = [x, y]
 
+    def _set_fov(self, fov) -> None:
+        """set field of view in meters"""
+        self._microscope.optics.scan_field_of_view = fov
 
     def _blank_beam(self) -> None:
         """blank beam"""
@@ -277,8 +291,51 @@ class ThermoMicroscope(Microscope):
         """
         unblank beam
         """
-        if self._microscope is not None:
-            self._microscope.optics.blanker.unblank()
+        self._microscope.optics.blanker.unblank()
+
+    def _get_stage(self):
+        """Get the current stage position as a list of floats [x, y, z, alpha, beta]."""
+        position = self._microscope.specimen.stage.position
+        position = np.array(position)
+
+        # set proxy attributes with current stage position
+        stage = self._detector_proxies['stage']
+        beta_tilt_enabled = stage.read_attribute("beta_tilt_enabled").value
+
+        stage.x = float(position[1])
+        stage.y = float(position[0])
+        stage.z = float(position[2])
+        stage.alpha = float(math.degrees(position[3]))
+
+        if beta_tilt_enabled:
+            stage.beta = float(math.degrees(position[4]))
+        beta_tilt_enabled = False
+        if beta_tilt_enabled:
+            return position
+        else:
+            return position[:-1]
+
+    def _move_stage(self, position) -> None:
+        """Move stage to specified position [x, y, z, alpha, beta]."""
+        x = float(position[0])
+        y = float(position[1])
+        z = float(position[2])
+        alpha = float(position[3])
+        
+        stage = self._detector_proxies['stage']
+        beta_enabled = stage.beta_tilt_enabled
+
+        if beta_enabled:
+            beta = float(position[4])
+            self._microscope.specimen.stage.absolute_move((x, y, z, math.radians(alpha), math.radians(beta)))
+        else:
+            print('moving')
+            self._microscope.specimen.stage.absolute_move((x, y, z, math.radians(alpha), None))
+
+        # link the proxy with real state
+        self._get_stage()
+
+
 # ----------------------------------------------------------------------
 # Server entry point
 # ----------------------------------------------------------------------

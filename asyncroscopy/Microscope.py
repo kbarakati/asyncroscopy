@@ -26,7 +26,7 @@ from abc import abstractmethod, ABC, ABCMeta
 
 import numpy as np
 import tango
-from tango import AttrWriteType, DevEncoded, DevState, DevVarFloatArray
+from tango import AttrWriteType, DevEncoded, DevState, DevVarFloatArray, DevFloat
 from tango.server import Device, DeviceMeta, attribute, command, device_property
 
 class CombinedMeta(DeviceMeta, ABCMeta):
@@ -49,16 +49,30 @@ class Microscope(Device, metaclass=CombinedMeta):
         doc="Tango device address for the HAADF settings device. "
             "DB mode: 'test/detector/haadf' "
             "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/haadf#dbase=no'",
-)
+    )
+
+    eds_device_address = device_property(
+        dtype=str,
+        doc="Tango device address for the EDS settings device. "
+            "DB mode: 'test/detector/eds' "
+            "No-DB mode: 'tango://127.0.0.1:8887/test/nodb/haadf#dbase=no'",
+    )
+
     advanced_acquisition_device_address = device_property(
         dtype=str,
         doc="Tango device address for the HAADF settings device. "
             "DB mode: 'test/detector/advancedacquisition' "
             "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/advancedacquisition#dbase=no'",
-)
+    )
+
+    stage_device_address = device_property(
+        dtype=str,
+        doc="Tango device address for the STAGE settings device. "
+            "DB mode: 'test/hardware/stage' "
+            "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/stage#dbase=no'",
+    )
 
     # Add further detector device_property entries here as detectors are added
-    # eds_device_address   = device_property(dtype=str, default_value="test/detector/eds")
     # eels_device_address  = device_property(dtype=str, default_value="test/detector/eels")
 
     # ------------------------------------------------------------------
@@ -75,9 +89,18 @@ class Microscope(Device, metaclass=CombinedMeta):
     # ------------------------------------------------------------------
     # Initialisation
     # ------------------------------------------------------------------
-    @abstractmethod
     def init_device(self) -> None:
-        print(f"Must define a class-specific init_device() method")
+        Device.init_device(self)
+        self.set_state(DevState.INIT)
+
+        self._microscope: Optional[object] = None  # TemMicroscopeClient instance
+        self._stem_mode: bool = False
+
+        # Dict mapping detector name string → DeviceProxy
+        # Populated in _connect_detector_proxies
+        self._detector_proxies: dict[str, tango.DeviceProxy] = {}
+
+        self._connect()
 
     @abstractmethod
     def _connect(self):
@@ -118,6 +141,44 @@ class Microscope(Device, metaclass=CombinedMeta):
         self.set_state(DevState.OFF)
         self.info_stream("Disconnected from microscope hardware")
 
+
+    @command(dtype_in=str, dtype_out=DevEncoded)
+    def get_spectrum(self, detector_name: str) -> tuple[str, bytes]:
+        """
+        Acquire a single spectrum from the named detector with the specified exposure time.
+
+        Parameters
+        ----------
+        detector_name:
+            Name of the detector, e.g. "eds".
+
+        Returns
+        -------
+        DevEncoded = (json_metadata, raw_bytes)
+            json_metadata includes: shape, dtype, dwell_time, detector,
+            timestamp, and any other relevant metadata.
+            raw_bytes is the flat numpy array bytes; reshape using shape from metadata.
+        """
+
+        detector_name = detector_name.lower().strip()
+        proxy = self._detector_proxies.get(detector_name)
+        
+        # Read acquisition settings from the detector device
+        exposure_time = proxy.exposure_time # float
+
+        adorned_spectrum = self._acquire_spectrum(detector_name, exposure_time)
+
+        metadata = {
+            "detector": detector_name,
+            "dtype": str(adorned_spectrum.dtype),
+            "dwell_time": exposure_time,
+            "timestamp": time.time(),
+            # TODO: add metadata from adorned_spectrum.metadata when using real AutoScript
+        }
+
+        return json.dumps(metadata), adorned_spectrum.tobytes()
+
+
     @command(dtype_in=str, dtype_out=DevEncoded)#In PyTango, DevEncoded is a special Tango data type designed to send binary data + a small description string together as a single return value.
     def get_image(self, detector_name: str) -> tuple[str, bytes]:
         """
@@ -139,13 +200,6 @@ class Microscope(Device, metaclass=CombinedMeta):
         detector_name = detector_name.lower().strip()
 
         proxy = self._detector_proxies.get(detector_name)
-        if proxy is None:
-            tango.Except.throw_exception(
-                "UnknownDetector",
-                f"No proxy found for detector '{detector_name}'. "
-                f"Available: {list(self._detector_proxies.keys())}",
-                "Microscope.get_image()",
-            )
 
         # Read acquisition settings from the detector device
         dwell_time: float = proxy.dwell_time
@@ -185,13 +239,6 @@ class Microscope(Device, metaclass=CombinedMeta):
         """
         # Normalize and validate
         detector_names = [name.lower().strip() for name in detector_names]
-        for name in detector_names:
-            if name not in self._detector_proxies:
-                tango.Except.throw_exception(
-                    "UnknownDetector",
-                    f"Unknown detector: {name}",
-                    "get_images()"
-                )
         
         # Get settings from AdvancedAcquisition device
         adv_acq_proxy = self._detector_proxies.get("AdvancedAcquistion")
@@ -263,6 +310,39 @@ class Microscope(Device, metaclass=CombinedMeta):
         """
         self._unblank_beam()
 
+    @command(dtype_in=DevFloat)
+    def set_fov(self, fov):
+        """
+        set the field of view for the next acquisition, [0:1]
+        """
+        print(fov)
+        self._set_fov(fov)
+
+    @command(dtype_out=DevVarFloatArray)
+    def get_stage(self):
+        """
+        Get the current stage position as a list of floats [x, y, z, alpha, beta].
+
+        Returns
+        -------
+        DevVarFloatArray = [x, y, z, alpha, beta]
+
+        """
+        position = self._get_stage()
+
+        return position
+
+    @command(dtype_in=DevVarFloatArray)
+    def move_stage(self, position):
+        """
+        Move the the stage
+        to an absolute position  [x, y, z, alpha, beta]
+
+        Parameters
+        position: an absolute reference frame move position (not relative)
+
+        """
+        self._move_stage(position)
 
     # ------------------------------------------------------------------
     # Internal acquisition helpers
@@ -289,7 +369,18 @@ class Microscope(Device, metaclass=CombinedMeta):
         # define in the inherit class
         pass
 
+    @abstractmethod
+    def _move_stage():
+        # define in the inherit class
+        pass
 
+    @abstractmethod
+    def _get_stage():
+        pass
+
+    @abstractmethod
+    def _set_fov():
+        pass
 # ----------------------------------------------------------------------
 # Server entry point
 # ----------------------------------------------------------------------
