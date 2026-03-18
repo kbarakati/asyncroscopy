@@ -16,13 +16,20 @@ class ThermoDigitalTwin(Microscope):
     """
     A digital twin for the ThermoMicroscope.
     """
-
+    # ------------------------------------------------------------------
+    # Attributes
+    # ------------------------------------------------------------------
+    
     manufacturer = attribute(
         label="ThermoDigitalTwin",
         dtype=str,
         doc="Simulation backend",
     )
 
+    # ------------------------------------------------------------------
+    # Initialisation
+    # ------------------------------------------------------------------
+    
     def init_device(self) -> None:
         Device.init_device(self)
         self.set_state(DevState.INIT)
@@ -57,8 +64,17 @@ class ThermoDigitalTwin(Microscope):
             except DevFailed as e:
                 self.error_stream(f"Failed to connect to {name} proxy at {address}: {e}")
 
+    # ------------------------------------------------------------------
+    # Attribute read methods
+    # ------------------------------------------------------------------
+    
     def read_manufacturer(self) -> str:
         return self._manufacturer
+
+
+    # ------------------------------------------------------------------
+    # Internal acquisition helpers
+    # ------------------------------------------------------------------
 
     def _acquire_stem_image(
         self,

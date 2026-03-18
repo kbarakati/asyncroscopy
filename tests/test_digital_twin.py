@@ -10,22 +10,18 @@ import json
 import numpy as np
 import pytest
 import tango
-from tango.test_context import MultiDeviceTestContext
-
-from asyncroscopy.detectors.HAADF import HAADF
-from asyncroscopy.ThermoDigitalTwin import ThermoDigitalTwin
 
 # Using shared twin_proxy from conftest.py
 
 class TestThermoDigitalTwin:
 
-    def test_state_is_on(self, twin_proxy):
+    def test_state_is_on(self, twin_proxy: tango.DeviceProxy):
         assert twin_proxy.state() == tango.DevState.ON
 
-    def test_manufacturer_is_digital_twin(self, twin_proxy):
+    def test_manufacturer_is_digital_twin(self, twin_proxy: tango.DeviceProxy):
         assert twin_proxy.manufacturer == "UTKTeam"
 
-    def test_get_image_returns_valid_data(self, twin_proxy):
+    def test_get_image_returns_valid_data(self, twin_proxy: tango.DeviceProxy):
         json_meta, raw_bytes = twin_proxy.get_image("haadf")
         meta = json.loads(json_meta)
         
@@ -37,6 +33,6 @@ class TestThermoDigitalTwin:
         assert image.shape == tuple(meta["shape"])
         assert image.dtype == np.uint16
 
-    def test_unknown_detector_raises(self, twin_proxy):
+    def test_unknown_detector_raises(self, twin_proxy: tango.DeviceProxy):
         with pytest.raises(tango.DevFailed):
             twin_proxy.get_image("void")

@@ -1,6 +1,7 @@
 # Asyncroscopy:
 - Enabling smart microscopy via asynchronous servers
 
+Note: `main` branch now contains the PyTango-based architecture. The previous Twisted-based implementation is preserved in the `twisted-legacy` branch for reference.
 ---
 
 # Q. Are you here to just directly dive in and do some hands on??
