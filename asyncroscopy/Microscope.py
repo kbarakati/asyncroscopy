@@ -177,13 +177,17 @@ class Microscope(Device, metaclass=CombinedMeta):
 
         metadata = {
             "detector": detector_name,
-            "dtype": str(adorned_spectrum.dtype),
             "dwell_time": exposure_time,
             "timestamp": time.time(),
             # TODO: add metadata from adorned_spectrum.metadata when using real AutoScript
         }
 
-        return json.dumps(metadata), adorned_spectrum.tobytes()
+        if isinstance(adorned_spectrum, dict):
+            raw_bytes = json.dumps(adorned_spectrum).encode("utf-8")
+        else:
+            raw_bytes = adorned_spectrum.tobytes()
+
+        return json.dumps(metadata), raw_bytes
 
 
     @command(dtype_out=DevEncoded)#In PyTango, DevEncoded is a special Tango data type designed to send binary data + a small description string together as a single return value.

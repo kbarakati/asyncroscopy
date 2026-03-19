@@ -1,6 +1,5 @@
 """
 Digital twin version of ThermoMicroscope for simulated image generation.
-
 Useful for testing and development without requiring AutoScript hardware.
 """
 
