@@ -1,3 +1,17 @@
+"""
+Bridge between a Tango control system and an MCP (Model Context Protocol) server.
+
+Tango is a distributed hardware-control framework used in scientific instruments.
+This module queries a Tango database for exported devices, introspects their
+commands, and dynamically registers each command as an MCP tool — making physical
+hardware controllable via LLM tool-calls.
+
+Usage:
+    server = MCPServer("MyServer", tango_host="localhost", tango_port=9094)
+    server.start()   # discovers devices, registers tools, starts HTTP server
+
+Dependencies: tango-controls, fastmcp
+"""
 import os
 import inspect
 import importlib
@@ -26,6 +40,22 @@ class MCPServer:
         search_packages: list[str] | None = None,
         verbose: bool = True,
     ):
+        """
+        Args:
+            name (str): Display name for the MCP server instance.
+            tango_host (str): Hostname of the Tango database server (e.g. "localhost").
+            tango_port (int): Port of the Tango database server (e.g. 9094).
+            blocked_functions (list[str] | None, optional): Command names to exclude
+                from all devices regardless of class. Defaults to None (no commands blocked).
+            blocked_classes (list[str] | None, optional): Tango device class names to
+                skip entirely. Defaults to None, which applies the built-in block list
+                ["DataBase", "DServer"] (Tango infrastructure classes not useful as tools).
+            search_packages (list[str] | None, optional): Python package names to search
+                for Tango Device subclasses when resolving richer docstrings and parameter
+                names. Defaults to None, which searches ["asyncroscopy"].
+            verbose (bool, optional): If True, print device discovery and tool registration
+                progress to stdout. Defaults to True.
+        """
         self.database = Database(tango_host, tango_port)
         self.mcp = FastMCP(name)
 
@@ -50,7 +80,10 @@ class MCPServer:
         """List all devices exported in the Tango DB."""
         devices = self.database.get_device_exported("*")
         return list(devices.value_string)
-    
+
+    # This method is registered directly via @tool() because it runs on the
+    # MCPServer instance itself (not on a Tango device proxy). All Tango device
+    # commands are registered dynamically in setup() via Tool.from_function().
     @tool()
     def list_devices(self) -> list[str]:
         """List available devices filtered by blocked classes."""
@@ -291,6 +324,10 @@ class MCPServer:
                 "self": self,
                 "out_type": out_type,
             }
+            # FastMCP inspects the actual parameter *name* in the function signature
+            # to build its JSON schema (e.g. "exposure_time" not generic "arg").
+            # Python's exec() is the only way to set a runtime-determined param name
+            # on a function — functools.wraps and __wrapped__ don't affect introspection.
             exec(
                 f"def wrapper({param_name}: arg_type) -> py_return_type:\n"
                 f"    result = func({param_name})\n"
