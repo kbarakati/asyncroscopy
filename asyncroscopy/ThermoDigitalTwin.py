@@ -72,6 +72,8 @@ class ThermoDigitalTwin(Microscope):
         self._beam_pos_y = 0.5
         self._particle_records = []
         self._imsize = 512
+        self._fov = 200e-10  # meters, i.e. 200 angstroms
+        self._stage_position = np.random.rand(3) * 1e-6  # random initial stage position in meters
         
         self._connect()
         
@@ -144,7 +146,7 @@ class ThermoDigitalTwin(Microscope):
         """
         size = imsize
         self._imsize = imsize
-        fov = 200 # angstrom IF CHANGE HERE, ALSO CHANGE IN GET_SPECTRUM
+        fov = self._fov * 1e10  # angstroms
         edge_crop = 20
         beam_current = 1000 # pA?  unsure
         blur_noise_level = float(0.1)
@@ -380,14 +382,30 @@ class ThermoDigitalTwin(Microscope):
         x, y = position
         self.write_beam_pos([x, y])
 
-# 
-#     def _set_fov(self, fov) -> None:
-#         """set field of view in meters"""
 
+    def _set_fov(self, fov) -> None:
+        """set field of view in meters"""
+        # For the digital twin, we can just store this as a property and use it in acquisition simulations.
+        self._fov = fov
+
+
+    def _get_stage(self):
+        """Return current stage position as (x, y, z, a, b) in meters."""
+        return self._stage_position
+    
+    def _move_stage(self, position):
+        """Move stage to specified position (x, y, z, a, b) in meters."""
+        self.old_pos = self._stage_position
+        relative_move = np.array(position) - self._stage_position
+
+        # shift the particle records/ atoms object positions by this much, negative
+
+        random_shift = np.random.normal(0, 5e-8, size=5) 
+        self._stage_position = position + random_shift
 
 # ----------------------------------------------------------------------
 # Server entry point
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
     ThermoDigitalTwin.run_server()
