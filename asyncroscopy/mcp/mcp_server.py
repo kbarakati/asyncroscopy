@@ -20,7 +20,15 @@ from pydantic import Field
 
 from fastmcp import FastMCP
 from tango import Database, DeviceProxy, CommandInfo, CmdArgType
-from tango.utils import TO_TANGO_TYPE
+from tango.utils import (
+    TO_TANGO_TYPE,
+    is_array_type,
+    is_scalar_type,
+    is_bool_type,
+    is_float_type,
+    is_int_type,
+    is_str_type,
+)
 from tango.server import Device
 from fastmcp.tools import tool, Tool
 
@@ -141,35 +149,70 @@ class MCPServer:
         return registered_count
 
     @staticmethod
-    def _cmd_type_name(cmd_type: CmdArgType) -> str:
-        """Return a readable Tango command type name."""
-        return cmd_type.name
-
-    @staticmethod
     def _is_dev_encoded_type(cmd_type: CmdArgType) -> bool:
-        """Handle enum/int variants."""
-        if cmd_type == CmdArgType.DevEncoded:
-            return True
-        name = cmd_type.name
-        return name == "DevEncoded"
+        """Check if the command type is DevEncoded."""
+        return cmd_type == CmdArgType.DevEncoded
 
     @staticmethod
-    def _tango_type_to_python(cmd_type: CmdArgType) -> type:
+    def _tango_scalar_to_python_type(cmd_type: CmdArgType) -> Any:
+        """Map a Tango scalar CmdArgType to a Python type."""
+        if not is_scalar_type(cmd_type):
+            return None
+
+        if is_bool_type(cmd_type):
+            return bool
+        if is_float_type(cmd_type):
+            return float
+        if is_int_type(cmd_type):
+            return int
+        if is_str_type(cmd_type):
+            return str
+
+        # Keep compatibility with less common or non-builtin mapped scalar types.
+        candidates = [
+            py_type
+            for py_type, tango_type in TO_TANGO_TYPE.items()
+            if tango_type == cmd_type and isinstance(py_type, type)
+        ]
+        if not candidates:
+            return Any
+
+        for py_type in candidates:
+            if py_type.__module__ == "builtins":
+                return py_type
+        return candidates[0]
+
+    @staticmethod
+    def _tango_array_to_python_list(cmd_type: CmdArgType) -> Any:
+        """Map a Tango array type to a typed Python list when possible."""
+        if not is_array_type(cmd_type):
+            return None
+
+        if is_bool_type(cmd_type, inc_array=True):
+            return list[bool]
+        if is_float_type(cmd_type, inc_array=True):
+            return list[float]
+        if is_int_type(cmd_type, inc_array=True):
+            return list[int]
+        if is_str_type(cmd_type, inc_array=True):
+            return list[str]
+        return list
+        
+    @staticmethod
+    def _tango_type_to_python(cmd_type: CmdArgType) -> Any:
         if cmd_type == CmdArgType.DevVoid:
             return type(None)
         if MCPServer._is_dev_encoded_type(cmd_type):
             return dict
 
-        for py_type, t_cmd in TO_TANGO_TYPE.items():
-            if t_cmd == cmd_type and isinstance(py_type, type) and py_type.__module__ == 'builtins':
-                return py_type
+        scalar_type = MCPServer._tango_scalar_to_python_type(cmd_type)
+        if scalar_type is not None:
+            return scalar_type
 
-        name = cmd_type.name
-        if 'Array' in name: return list
-        if 'String' in name: return str
-        if 'Float' in name or 'Double' in name: return float
-        if 'Long' in name or 'Short' in name or 'Int' in name: return int
-        if 'Boolean' in name: return bool
+        typed_list = MCPServer._tango_array_to_python_list(cmd_type)
+        if typed_list is not None:
+            return typed_list
+
         return Any
 
     @staticmethod
@@ -271,11 +314,11 @@ class MCPServer:
             in_desc = cmd_info.in_type_desc
             out_desc = cmd_info.out_type_desc
 
-            lines.append(f"Input Type: {self._cmd_type_name(in_type)}")
+            lines.append(f"Input Type: {self.in_type.name}")
             if in_desc:
                 lines.append(f"Input Description: {in_desc}")
 
-            lines.append(f"Output Type: {self._cmd_type_name(out_type)}")
+            lines.append(f"Output Type: {self.out_type.name}")
             if out_desc:
                 lines.append(f"Output Description: {out_desc}")
 
@@ -340,7 +383,7 @@ class MCPServer:
             arg_type = py_type
 
         if in_type == CmdArgType.DevVoid:
-            def wrapper() -> py_return_type:
+            def wrapper():
                 result = func()
                 return self._normalize_command_result(out_type, result)
             wrapper.__annotations__ = {"return": py_return_type}
