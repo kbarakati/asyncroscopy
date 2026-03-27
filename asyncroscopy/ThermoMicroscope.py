@@ -24,8 +24,7 @@ Client-side reconstruction example::
     image   = np.frombuffer(encoded[1], dtype=meta["dtype"]).reshape(meta["shape"])
 """
 
-import json
-import time
+import os
 import math
 from typing import Optional
 
@@ -96,7 +95,7 @@ class ThermoMicroscope(Microscope):
 
     def _connect_hardware(self) -> None:
         """Establish AutoScript connection from MPC -> hardware."""
-        if not _AUTOSCRIPT_AVAILABLE:
+        if not _AUTOSCRIPT_AVAILABLE or self.testing_mode_bool:
             self.warn_stream("AutoScript not available")
             return
         try:

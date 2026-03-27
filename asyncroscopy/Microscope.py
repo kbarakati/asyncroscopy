@@ -65,6 +65,9 @@ class Microscope(Device, metaclass=CombinedMeta):
             "DB mode: 'test/hardware/stage' "
             "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/stage#dbase=no'",
     )
+    testing_mode_bool = device_property(dtype=bool, 
+                                        default_value=False,
+                                        doc="When True - used for running tests, passed in conftest.py")
 
     # Add further detector device_property entries here as detectors are added
     # eels_device_address  = device_property(dtype=str, default_value="test/detector/eels")
