@@ -32,15 +32,17 @@ from tango.utils import (
 from tango.server import Device
 from fastmcp.tools import tool, Tool
 
+
 class MCPServer:
     DEFAULT_BLOCKED_CLASSES = ["DataBase", "DServer"]
+    DEFAULT_BLOCKED_FUNCTIONS = ["Init"]
 
     def __init__(
         self,
         name: str,
         tango_host: str,
         tango_port: int,
-        blocked_functions: list[str] | None = None,
+        blocked_functions: list[str] | dict[str, list[str]] | None = None,
         blocked_classes: list[str] | None = None,
         search_packages: list[str] | None = None,
         verbose: bool = True,
@@ -50,8 +52,11 @@ class MCPServer:
             name (str): Display name for the MCP server instance.
             tango_host (str): Hostname of the Tango database server (e.g. "localhost").
             tango_port (int): Port of the Tango database server (e.g. 9094).
-            blocked_functions (list[str] | None, optional): Command names to exclude
-                from all devices regardless of class. Defaults to None (no commands blocked).
+            blocked_functions (list[str] | dict[str, list[str]] | None, optional): 
+                Command names to exclude. Can be a simple list for global blocks, 
+                or a dictionary mapping Tango class names to command lists. 
+                Use "*" as a dictionary key for global blocks. Defaults to None, 
+                which applies the built-in block list: ["Init"].
             blocked_classes (list[str] | None, optional): Tango device class names to
                 skip entirely. Defaults to None, which applies the built-in block list
                 ["DataBase", "DServer"] (Tango infrastructure classes not useful as tools).
@@ -63,8 +68,15 @@ class MCPServer:
         """
         self.database = Database(tango_host, tango_port)
         self.mcp = FastMCP(name)
-
-        self.blocked_functions = blocked_functions or []
+        
+        # Normalize to storage format: dict[class_name, list[command_name]]
+        if blocked_functions is None:
+            self.blocked_functions = {"*": self.DEFAULT_BLOCKED_FUNCTIONS.copy()}
+        elif isinstance(blocked_functions, list):
+            self.blocked_functions = {"*": blocked_functions}
+        else:
+            self.blocked_functions = blocked_functions
+            
         self.blocked_classes = blocked_classes or self.DEFAULT_BLOCKED_CLASSES.copy()
         self._blocked_classes_normalized = {
             cls_name.lower() for cls_name in self.blocked_classes
@@ -110,9 +122,19 @@ class MCPServer:
                 pass
         return available
     
-    def get_blocked_functions(self) -> list[str]:
+    def get_blocked_functions(self) -> dict[str, list[str]]:
         """Get the list of blocked functions."""
         return self.blocked_functions
+
+    def _is_blocked_function(self, dev_class: str, command_name: str) -> bool:
+        """Check if a command is blocked."""
+        # Global blocks apply to every class
+        if command_name in self.blocked_functions.get("*", []):
+            return True
+        # Class-specific overrides
+        if command_name in self.blocked_functions.get(dev_class, []):
+            return True
+        return False
 
     def get_blocked_classes(self) -> list[str]:
         """Get the list of blocked Tango classes."""
@@ -452,7 +474,7 @@ class MCPServer:
 
             for cmd in commands:
                 command_name = cmd.cmd_name if hasattr(cmd, "cmd_name") else str(cmd)
-                if command_name in self.blocked_functions:
+                if self._is_blocked_function(dev_class, command_name):
                     continue
                 try:
                     func = getattr(dev, command_name)

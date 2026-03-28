@@ -258,8 +258,6 @@ class TestMCPServerDBMode:
             name="MCPServerTest",
             tango_host=host,
             tango_port=port,
-            blocked_classes=["DataBase", "DServer"],
-            blocked_functions=[],
         )
 
         server.setup(print_summary=True)
