@@ -37,6 +37,7 @@ from fastmcp.prompts import prompt
 from fastmcp.tools.function_tool import ToolMeta
 from fastmcp.resources.function_resource import ResourceMeta
 from fastmcp.prompts.function_prompt import PromptMeta
+from fastmcp.server.server import Transport
 
 
 class MCPServer:
@@ -595,10 +596,21 @@ class MCPServer:
                 print("")
             print("")
 
-    def start(self, host: str = "127.0.0.1", port: int = 8000):
-        """Setup and start the MCP server."""
+    def start_http(self, host: str = "127.0.0.1", port: int = 8000):
+        """Exposes MCP tools via HTTP for cross-process or remote agent access."""
+        self.start(transport="streamable-http", host=host, port=port)
+
+    def start(self, transport: Transport | None = None, **kwargs):
+        """
+        Synchronizes with Tango DB and begins serving the MCP protocol.
+        
+        Args:
+            transport: Transport protocol to use ("stdio", "http", "sse", or "streamable-http").
+                       Defaults to None, which uses stdio for local piping to agents.
+            **kwargs: Additional keyword arguments to pass to the MCP server
+        """
         self.setup()
-        self.mcp.run(transport="streamable-http", host=host, port=port)
+        self.mcp.run(transport=transport, **kwargs)
 
 if __name__ == "__main__":
     tango_host = os.environ.get("TANGO_HOST", "localhost:9094")
