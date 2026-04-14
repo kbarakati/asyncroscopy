@@ -319,10 +319,17 @@ class Microscope(Device, metaclass=CombinedMeta):
     @command(dtype_in=DevFloat)
     def set_fov(self, fov):
         """
-        set the field of view for the next acquisition, [0:1]
+        set the field of view for the next acquisition
         """
         print(fov)
         self._set_fov(fov)
+
+    @command(dtype_out=DevFloat)
+    def get_fov(self):
+        """
+        read the field of view for the next acquisition
+        """
+        return self._get_fov()
 
     @command(dtype_out=DevVarFloatArray)
     def get_stage(self):
@@ -386,6 +393,10 @@ class Microscope(Device, metaclass=CombinedMeta):
 
     @abstractmethod
     def _set_fov():
+        pass
+
+    @abstractmethod
+    def _get_fov():
         pass
 # ----------------------------------------------------------------------
 # Server entry point

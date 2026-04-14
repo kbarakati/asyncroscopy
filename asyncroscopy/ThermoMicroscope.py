@@ -249,6 +249,10 @@ class ThermoMicroscope(Microscope):
         """set field of view in meters"""
         self._microscope.optics.scan_field_of_view = fov
 
+    def _get_fov(self) -> float:
+        """get field of view in meters"""
+        return self._microscope.optics.scan_field_of_view
+
     def _blank_beam(self) -> None:
         """blank beam"""
         if self._microscope is not None:
@@ -263,45 +267,31 @@ class ThermoMicroscope(Microscope):
 
     def _get_stage(self):
         """Get the current stage position as a list of floats [x, y, z, alpha, beta]."""
-        position = self._microscope.specimen.stage.position
-        position = np.array(position)
-
         # set proxy attributes with current stage position
         stage = self._detector_proxies['stage']
-        beta_tilt_enabled = stage.read_attribute("beta_tilt_enabled").value
+
+        position = self._microscope.specimen.stage.position
+        position = np.array(position)
 
         stage.x = float(position[1])
         stage.y = float(position[0])
         stage.z = float(position[2])
         stage.alpha = float(math.degrees(position[3]))
+        stage.beta = float(math.degrees(position[4]))
 
-        if beta_tilt_enabled:
-            stage.beta = float(math.degrees(position[4]))
-        beta_tilt_enabled = False
-        if beta_tilt_enabled:
-            return position
-        else:
-            return position[:-1]
+        return position
+
 
     def _move_stage(self, position) -> None:
         """Move stage to specified position [x, y, z, alpha, beta]."""
         x = float(position[0])
         y = float(position[1])
         z = float(position[2])
-        alpha = float(position[3])
-        
-        stage = self._detector_proxies['stage']
-        beta_enabled = stage.beta_tilt_enabled
+        alpha = float(math.radians(position[3]))
+        beta = float(math.radians(position[4]))
 
-        if beta_enabled:
-            beta = float(position[4])
-            self._microscope.specimen.stage.absolute_move((x, y, z, math.radians(alpha), math.radians(beta)))
-        else:
-            print('moving')
-            self._microscope.specimen.stage.absolute_move((x, y, z, math.radians(alpha), None))
-
-        # link the proxy with real state
-        self._get_stage()
+        self._microscope.specimen.stage.absolute_move((x, y, z, alpha, beta))
+        self._get_stage() # link the proxy with real state
 
 
 # ----------------------------------------------------------------------
