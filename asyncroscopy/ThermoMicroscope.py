@@ -284,7 +284,6 @@ class ThermoMicroscope(Microscope):
         poly_func = np.poly1d(coeffs)
         self.screen_current_calibration = poly_func
 
-
     def _set_screen_current(self, current) -> None:
         """set screen current in pA"""
         if self.screen_current_calibration is not None:
@@ -305,7 +304,6 @@ class ThermoMicroscope(Microscope):
             x_real = np.max(x_real) # choose the largest real root as the gun lens value
             self._microscope.monochromator.focus = float(x_real)
 
-
     def _get_stage(self):
         """Get the current stage position as a list of floats [x, y, z, alpha, beta]."""
         # set proxy attributes with current stage position
@@ -322,7 +320,6 @@ class ThermoMicroscope(Microscope):
 
         return position
 
-
     def _move_stage(self, position) -> None:
         """Move stage to specified position [x, y, z, alpha, beta]."""
         x = float(position[0])
@@ -338,6 +335,15 @@ class ThermoMicroscope(Microscope):
         """Perform autofocus routine C1A1"""
         settings = RunOptiStemSettings(method='C1A1') #method=OptiStemMethod.C1_A1, dwell_time=2e-06, cutoff_in_pixels=5)
         self._microscope.auto_functions.run_opti_stem(settings)
+
+    def _set_image_shift(self, shift):
+        """Apply image shift in meters."""
+        x_shift = float(shift[0])
+        y_shift = float(shift[1])
+        try:
+            self._microscope.optics.deflectors.image_shift = (x_shift, y_shift)
+        except Exception as e:
+            self.error_stream(f"Failed to set image shift: {e}")
 
 # ----------------------------------------------------------------------
 # Server entry point

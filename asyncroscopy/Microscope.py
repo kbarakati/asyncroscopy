@@ -370,6 +370,17 @@ class Microscope(Device, metaclass=CombinedMeta):
         Run the microscope's autofocus routine.
         """
         self._auto_focus()
+
+    @command(dtype_in=DevVarFloatArray)
+    def set_image_shift(self, shift):
+        """
+        Set the image shift to the specified values [x_shift, y_shift].
+
+        Parameters
+        ----------
+        shift: list of two floats [x_shift, y_shift] specifying the desired image shift in meters.
+        """
+        self._set_image_shift(shift)
     # ------------------------------------------------------------------
     # Internal acquisition helpers
     # ------------------------------------------------------------------
@@ -419,6 +430,10 @@ class Microscope(Device, metaclass=CombinedMeta):
 
     @abstractmethod
     def _auto_focus():
+        pass
+
+    @abstracatmethod
+    def _set_image_shift():
         pass
 # ----------------------------------------------------------------------
 # Server entry point
