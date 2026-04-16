@@ -27,6 +27,7 @@ Client-side reconstruction example::
 import os
 import math
 from typing import Optional
+import time
 
 import numpy as np
 import tango
@@ -41,7 +42,7 @@ try:
     from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize, EdsDetectorType
     from autoscript_tem_microscope_client.enumerations import RegionCoordinateSystem, ExposureTimeType
     from autoscript_tem_microscope_client.structures import Region, Rectangle, AdornedSpectrum
-    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings, EdsAcquisitionSettings
+    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings, EdsAcquisitionSettings, RunOptiStemSettings
 
     _AUTOSCRIPT_AVAILABLE = True
 except ImportError:
@@ -258,12 +259,52 @@ class ThermoMicroscope(Microscope):
         if self._microscope is not None:
             self._microscope.optics.blanker.blank()
 
-
     def _unblank_beam(self) -> None:
         """
         unblank beam
         """
         self._microscope.optics.blanker.unblank()
+
+    def _caibrate_screen_current(self) -> None:
+        original_gun_lens = self._microscope.optics.monochromator.focus
+        gun_lens_series = np.linspace(5, 100, 7)
+
+        # series of measurements
+        current_series = []
+        for val in gun_lens_series:
+            self._microscope.optics.monochromator.focus = val # original_gun_lens + val
+            time.sleep(1)
+            screen_current = self._microscope.detectors.screen.measure_current()
+            current_series.append(screen_current)
+        current_series = np.array(current_series) * 1e12
+        self._microscope.optics.monochromator.focus = original_gun_lens
+
+        # fit a polynomial and save:
+        coeffs = np.polyfit(gun_lens_series, current_series, 11)
+        poly_func = np.poly1d(coeffs)
+        self.screen_current_calibration = poly_func
+
+
+    def _set_screen_current(self, current) -> None:
+        """set screen current in pA"""
+        if self.screen_current_calibration is not None:
+            poly_func = self.screen_current_calibration
+            adjusted_poly = poly_func - current
+            x_candidates = adjusted_poly.r
+            x_real = x_candidates[np.isreal(x_candidates)].real
+            x_real = np.max(x_real) # choose the largest real root as the gun lens value
+            self._microscope.monochromator.focus = float(x_real)
+        else:
+            self.warn_stream("Screen current calibration not available. running calibration (should take 15 seconds).")
+            self._caibrate_screen_current()
+
+            poly_func = self.screen_current_calibration
+            adjusted_poly = poly_func - current
+            x_candidates = adjusted_poly.r
+            x_real = x_candidates[np.isreal(x_candidates)].real
+            x_real = np.max(x_real) # choose the largest real root as the gun lens value
+            self._microscope.monochromator.focus = float(x_real)
+
 
     def _get_stage(self):
         """Get the current stage position as a list of floats [x, y, z, alpha, beta]."""
@@ -293,6 +334,10 @@ class ThermoMicroscope(Microscope):
         self._microscope.specimen.stage.absolute_move((x, y, z, alpha, beta))
         self._get_stage() # link the proxy with real state
 
+    def _auto_focus(self):
+        """Perform autofocus routine C1A1"""
+        settings = RunOptiStemSettings(method='C1A1') #method=OptiStemMethod.C1_A1, dwell_time=2e-06, cutoff_in_pixels=5)
+        self._microscope.auto_functions.run_opti_stem(settings)
 
 # ----------------------------------------------------------------------
 # Server entry point

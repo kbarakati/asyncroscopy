@@ -330,6 +330,13 @@ class Microscope(Device, metaclass=CombinedMeta):
         read the field of view for the next acquisition
         """
         return self._get_fov()
+    
+    @command(dtype_in=DevFloat)
+    def set_screen_current(self, current):
+        """
+        set the screen current in pA
+        """
+        self._set_screen_current(current)
 
     @command(dtype_out=DevVarFloatArray)
     def get_stage(self):
@@ -357,6 +364,12 @@ class Microscope(Device, metaclass=CombinedMeta):
         """
         self._move_stage(position)
 
+    @command()
+    def auto_focus(self):
+        """
+        Run the microscope's autofocus routine.
+        """
+        self._auto_focus()
     # ------------------------------------------------------------------
     # Internal acquisition helpers
     # ------------------------------------------------------------------
@@ -383,6 +396,11 @@ class Microscope(Device, metaclass=CombinedMeta):
         pass
 
     @abstractmethod
+    def _set_screen_current():
+        # define in the inherit class
+        pass
+
+    @abstractmethod
     def _move_stage():
         # define in the inherit class
         pass
@@ -397,6 +415,10 @@ class Microscope(Device, metaclass=CombinedMeta):
 
     @abstractmethod
     def _get_fov():
+        pass
+
+    @abstractmethod
+    def _auto_focus():
         pass
 # ----------------------------------------------------------------------
 # Server entry point
