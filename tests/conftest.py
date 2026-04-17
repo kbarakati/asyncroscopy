@@ -13,12 +13,13 @@ This avoids:
 
 import numpy as np
 import pytest
-import os
 import tango
 from tango.test_context import MultiDeviceTestContext
 
 # Import device classes to test
 from asyncroscopy.hardware.SCAN import SCAN
+from asyncroscopy.hardware.STAGE import STAGE
+from asyncroscopy.detectors.EDS import EDS
 from asyncroscopy.ThermoDigitalTwin import ThermoDigitalTwin
 from asyncroscopy.ThermoMicroscope import ThermoMicroscope
 
@@ -46,12 +47,32 @@ def tango_ctx():
             ],
         },
         {
+            "class": EDS,
+            "devices": [
+                {
+                    "name": "test/nodb/eds",
+                    "properties": {},
+                }
+            ],
+        },
+        {
+            "class": STAGE,
+            "devices": [
+                {
+                    "name": "test/nodb/stage",
+                    "properties": {},
+                }
+            ],
+        },
+        {
             "class": ThermoDigitalTwin,
             "devices": [
                 {
                     "name": "test/nodb/twin",
                     "properties": {
                         "scan_device_address": "test/nodb/scan",
+                        "eds_device_address": "test/nodb/eds",
+                        "stage_device_address": "test/nodb/stage",
                     },
                 }
             ],
@@ -88,6 +109,16 @@ def scan_proxy(tango_ctx):
 @pytest.fixture(scope="session")
 def twin_proxy(tango_ctx):
     return tango.DeviceProxy(tango_ctx.get_device_access("test/nodb/twin"))
+
+
+@pytest.fixture(scope="session")
+def eds_proxy(tango_ctx):
+    return tango.DeviceProxy(tango_ctx.get_device_access("test/nodb/eds"))
+
+
+@pytest.fixture(scope="session")
+def stage_proxy(tango_ctx):
+    return tango.DeviceProxy(tango_ctx.get_device_access("test/nodb/stage"))
 
 
 @pytest.fixture(scope="session")
