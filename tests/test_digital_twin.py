@@ -36,13 +36,6 @@ class TestThermoDigitalTwin:
         with pytest.raises(tango.DevFailed):
             twin_proxy.get_spectrum("void")
 
-    def test_viewport_metadata_has_stage_and_seed(self, twin_proxy: tango.DeviceProxy):
-        metadata = json.loads(twin_proxy.get_viewport_metadata())
-        assert "stage_position" in metadata
-        assert "sample_seed" in metadata
-        assert "viewport_world_angstrom" in metadata
-        assert len(metadata["stage_position"]) == 5
-
     def test_stage_navigation_changes_and_restores_view(
         self,
         twin_proxy: tango.DeviceProxy,
@@ -61,22 +54,6 @@ class TestThermoDigitalTwin:
         twin_proxy.move_stage([0.0, 0.0, 0.0, 0.0, 0.0])
         _, raw_a_again = twin_proxy.get_scanned_image()
         assert raw_a == raw_a_again
-
-    def test_regenerate_sample_same_seed_is_reproducible(
-        self,
-        twin_proxy: tango.DeviceProxy,
-        scan_proxy: tango.DeviceProxy,
-    ):
-        scan_proxy.imsize = 64
-        scan_proxy.dwell_time = 1e-6
-        twin_proxy.move_stage([0.0, 0.0, 0.0, 0.0, 0.0])
-
-        twin_proxy.regenerate_sample(2026)
-        _, raw_1 = twin_proxy.get_scanned_image()
-
-        twin_proxy.regenerate_sample(2026)
-        _, raw_2 = twin_proxy.get_scanned_image()
-        assert raw_1 == raw_2
 
     def test_spectrum_is_repeatable_at_same_pose_and_beam(
         self,

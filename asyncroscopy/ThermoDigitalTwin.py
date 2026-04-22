@@ -13,7 +13,7 @@ import tango
 from ase import Atoms
 from ase.build import bulk
 from tango import AttrWriteType, DevState
-from tango.server import Device, attribute, command, device_property
+from tango.server import Device, attribute, device_property
 
 from asyncroscopy.Microscope import Microscope
 
@@ -33,10 +33,15 @@ class ThermoDigitalTwin(Microscope):
         default_value=40,
         doc="Number of particles in the generated sample.",
     )
-    sample_extent_scale = device_property(
+    sample_size_xy = device_property(
         dtype=float,
-        default_value=3.0,
-        doc="Sample XY extent as a multiple of current FoV.",
+        default_value=6e-9,
+        doc="Absolute sample XY size in meters (must be > 0).",
+    )
+    sample_size_z = device_property(
+        dtype=float,
+        default_value=6e-9,
+        doc="Absolute sample thickness (Z) in meters (must be > 0).",
     )
     stage_move_noise_std = device_property(
         dtype=float,
@@ -62,6 +67,7 @@ class ThermoDigitalTwin(Microscope):
     )
 
     def init_device(self) -> None:
+        """Initialize the Tango device and simulation state variables."""
         Device.init_device(self)
         self.set_state(DevState.INIT)
 
@@ -74,7 +80,6 @@ class ThermoDigitalTwin(Microscope):
         self._fov = 200e-10  # meters
         self._stage_position = np.zeros(5, dtype=np.float64)  # x, y, z, alpha, beta
 
-        self._sample_seed_runtime = int(self.sample_seed)
         self._sample_atoms_base = Atoms()
         self._sample_atoms_view = Atoms()
         self._particle_records_base: list[dict] = []
@@ -95,7 +100,7 @@ class ThermoDigitalTwin(Microscope):
     def _connect(self):
         """Simulate connection by connecting to detector proxies."""
         self._connect_detector_proxies()
-        self._generate_sample(seed=self._sample_seed_runtime)
+        self._generate_sample(seed=int(self.sample_seed))
         self.set_state(DevState.ON)
 
     def _connect_detector_proxies(self) -> None:
@@ -116,6 +121,7 @@ class ThermoDigitalTwin(Microscope):
                 self.error_stream(f"Failed to connect to {name} proxy at {address}: {e}")
 
     def _sync_stage_from_proxy(self) -> None:
+        """Fetch the current stage position from the stage device proxy."""
         stage = self._detector_proxies.get("stage")
         if stage is None:
             return
@@ -128,63 +134,35 @@ class ThermoDigitalTwin(Microscope):
         except tango.DevFailed:
             self.error_stream("Failed to read stage proxy position; using internal stage state.")
 
-    @staticmethod
-    def _rotation_matrix_from_stage(alpha_deg: float, beta_deg: float) -> np.ndarray:
-        a = np.radians(alpha_deg)
-        b = np.radians(beta_deg)
-        rx = np.array(
-            [
-                [1.0, 0.0, 0.0],
-                [0.0, np.cos(a), -np.sin(a)],
-                [0.0, np.sin(a), np.cos(a)],
-            ]
-        )
-        ry = np.array(
-            [
-                [np.cos(b), 0.0, np.sin(b)],
-                [0.0, 1.0, 0.0],
-                [-np.sin(b), 0.0, np.cos(b)],
-            ]
-        )
-        return ry @ rx
-
-    @staticmethod
-    def _rotation_matrix_zyx(alpha: float, beta: float, gamma: float) -> np.ndarray:
-        a, b, g = np.radians([alpha, beta, gamma])
-        rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
-        ry = np.array([[np.cos(b), 0, np.sin(b)], [0, 1, 0], [-np.sin(b), 0, np.cos(b)]])
-        rx = np.array([[1, 0, 0], [0, np.cos(g), -np.sin(g)], [0, np.sin(g), np.cos(g)]])
-        return rz @ ry @ rx
-
-    def _transform_positions_by_stage(self, positions: np.ndarray) -> np.ndarray:
-        stage_xyz_ang = self._stage_position[:3] * 1e10
-        alpha_deg, beta_deg = self._stage_position[3], self._stage_position[4]
-        rot = self._rotation_matrix_from_stage(alpha_deg, beta_deg)
-        center = np.zeros(3, dtype=np.float64)
-        rotated = (positions - center) @ rot.T + center
-        return rotated - stage_xyz_ang
-
     def _update_view_cache(self, force: bool = False) -> None:
+        """Update the viewed sample positions by applying current stage rotations and translations."""
         pose_key = tuple(np.round(self._stage_position, 12))
         if not force and pose_key == self._cached_pose_key:
             return
 
-        if len(self._sample_atoms_base) > 0:
-            base_positions = self._sample_atoms_base.get_positions()
-            transformed = self._transform_positions_by_stage(base_positions)
-            self._sample_atoms_view = Atoms(
-                symbols=self._sample_atoms_base.get_chemical_symbols(),
-                positions=transformed,
-            )
-        else:
-            self._sample_atoms_view = Atoms()
+        alpha_deg, beta_deg = self._stage_position[3], self._stage_position[4]
+        stage_xyz_ang = self._stage_position[:3] * 1e10
+
+        self._sample_atoms_view = self._sample_atoms_base.copy()
+        if len(self._sample_atoms_view) > 0:
+            if alpha_deg != 0.0:
+                self._sample_atoms_view.rotate(alpha_deg, 'x', center=(0, 0, 0))
+            if beta_deg != 0.0:
+                self._sample_atoms_view.rotate(beta_deg, 'y', center=(0, 0, 0))
+            self._sample_atoms_view.translate(-stage_xyz_ang)
 
         self._particle_records_view = []
         for rec in self._particle_records_base:
-            center_view = self._transform_positions_by_stage(rec["center"].reshape(1, 3))[0]
+            dummy = Atoms("H", positions=[rec["center"]])
+            if alpha_deg != 0.0:
+                dummy.rotate(alpha_deg, 'x', center=(0, 0, 0))
+            if beta_deg != 0.0:
+                dummy.rotate(beta_deg, 'y', center=(0, 0, 0))
+            dummy.translate(-stage_xyz_ang)
+            
             self._particle_records_view.append(
                 {
-                    "center": center_view,
+                    "center": dummy.positions[0],
                     "radius": rec["radius"],
                     "btype": rec["btype"],
                     "composition": rec["composition"],
@@ -194,6 +172,7 @@ class ThermoDigitalTwin(Microscope):
 
     @staticmethod
     def _sub_pix_gaussian(size: int = 11, sigma: float = 0.8, dx: float = 0.0, dy: float = 0.0) -> np.ndarray:
+        """Generate a 2D Gaussian kernel with sub-pixel shifts for atomic rendering."""
         coords = np.arange(size) - (size - 1) / 2.0
         xx, yy = np.meshgrid(coords, coords)
         g = np.exp(-(((xx + dx) ** 2 + (yy + dy) ** 2) / (2 * sigma**2)))
@@ -208,6 +187,7 @@ class ThermoDigitalTwin(Microscope):
         bounds: tuple[float, float, float, float],
         atom_frame: int = 11,
     ) -> np.ndarray:
+        """Project 3D atomic coordinates into a 2D density map representing pseudo-potential."""
         x_min, x_max, y_min, y_max = bounds
         pixels_x = int(np.round((x_max - x_min) / pixel_size))
         pixels_y = int(np.round((y_max - y_min) / pixel_size))
@@ -255,6 +235,7 @@ class ThermoDigitalTwin(Microscope):
 
     @staticmethod
     def _poisson_noise(image: np.ndarray, counts: float, rng: np.random.Generator) -> np.ndarray:
+        """Apply normalized Poisson noise based on simulated electron counts."""
         image = image - image.min()
         total = float(image.sum())
         if total <= 0 or counts <= 0:
@@ -274,6 +255,7 @@ class ThermoDigitalTwin(Microscope):
         freq_scale: float,
         rng: np.random.Generator,
     ) -> np.ndarray:
+        """Generate low-frequency spatial noise to simulate background drift or detector artifacts."""
         size_x, size_y = image.shape
         noise = rng.normal(0, noise_level, (size_x, size_y))
         noise_fft = np.fft.fft2(noise)
@@ -291,10 +273,14 @@ class ThermoDigitalTwin(Microscope):
         return filtered_noise.astype(np.float32)
 
     def _generate_sample(self, seed: int) -> None:
+        """Procedurally generate the underlying base sample composed of bulk nanoparticles."""
         rng = np.random.default_rng(int(seed))
-        fov_ang = self._fov * 1e10
-        sample_xy = max(fov_ang * float(self.sample_extent_scale), fov_ang * 1.2)
-        sample_z = max(fov_ang * 0.6, 60.0)
+        sample_xy = float(self.sample_size_xy) * 1e10
+        sample_z = float(self.sample_size_z) * 1e10
+        if sample_xy <= 0.0 or sample_z <= 0.0:
+            raise ValueError(
+                "sample_size_xy and sample_size_z must both be > 0."
+            )
 
         particle_radius = 16.0
         radius_std = 2.0
@@ -365,10 +351,20 @@ class ThermoDigitalTwin(Microscope):
 
             rep = int(radius * 2 / a_lat) + 3
             supercell = this_bulk.repeat((rep, rep, rep))
-            positions = supercell.get_positions().copy()
-            positions -= positions.mean(axis=0)
-            rot = self._rotation_matrix_zyx(*angles)
-            positions = positions @ rot.T
+            
+            # Center the supercell at origin
+            supercell.center(about=(0.0, 0.0, 0.0))
+            
+            # Apply rotations (Z, Y, X by corresponding euler angles)
+            if angles[2] != 0.0:
+                supercell.rotate(angles[2], 'x', center=(0, 0, 0))
+            if angles[1] != 0.0:
+                supercell.rotate(angles[1], 'y', center=(0, 0, 0))
+            if angles[0] != 0.0:
+                supercell.rotate(angles[0], 'z', center=(0, 0, 0))
+                
+            positions = supercell.get_positions()
+            
             r_scaled = np.sqrt(
                 (positions[:, 0] / radius) ** 2
                 + (positions[:, 1] / radius) ** 2
@@ -402,12 +398,15 @@ class ThermoDigitalTwin(Microscope):
         self._update_view_cache(force=True)
 
     def read_manufacturer(self) -> str:
+        """Read method for the manufacturer attribute."""
         return self._manufacturer
 
     def read_beam_pos(self):
+        """Read method for the beam position attribute."""
         return [self._beam_pos_x, self._beam_pos_y]
 
     def write_beam_pos(self, value):
+        """Write method for the beam position attribute."""
         x, y = value[0], value[1]
         if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
             raise ValueError(f"beam_pos values must be in [0.0, 1.0], got x={x}, y={y}")
@@ -415,6 +414,7 @@ class ThermoDigitalTwin(Microscope):
         self._beam_pos_y = float(y)
 
     def _acquire_stem_image(self, imsize: int, dwell_time: float, detector_list: list) -> np.ndarray:
+        """Simulate STEM image acquisition using convolutions of the pseudo-potential and electron probe."""
         self._sync_stage_from_proxy()
         self._imsize = imsize
         self._update_view_cache(force=False)
@@ -452,7 +452,7 @@ class ThermoDigitalTwin(Microscope):
         scan_time = dwell_time * size * size
         counts = scan_time * (beam_current * 1e-12) / (1.602e-19)
         pose_seed = int(abs(hash((tuple(np.round(self._stage_position, 10)), round(self._fov, 14), size))) % (2**32))
-        rng = np.random.default_rng(pose_seed + self._sample_seed_runtime)
+        rng = np.random.default_rng(pose_seed + int(self.sample_seed))
         noisy_image = self._poisson_noise(image, counts=counts, rng=rng)
         noisy_image += self._lowfreq_noise(noisy_image, noise_level=0.1, freq_scale=0.1, rng=rng) * blur_noise_level
         return np.clip(noisy_image, 0.0, 1.0).astype(np.float32)
@@ -465,10 +465,12 @@ class ThermoDigitalTwin(Microscope):
         dwell_time: float,
         auto_beam_blank: bool,
     ) -> list[np.ndarray]:
+        """Perform advanced STEM acquisition returning multiple channels mapping to requested detectors."""
         im = self._acquire_stem_image(int(base_resolution), float(dwell_time), detector_names)
         return [im.copy() for _ in detector_names]
 
     def _acquire_spectrum(self, detector_name: str, exposure_time: float):
+        """Simulate EDS spectrum acquisition at the current beam position weighted by surrounding particles."""
         self._sync_stage_from_proxy()
         self._update_view_cache(force=False)
 
@@ -497,7 +499,7 @@ class ThermoDigitalTwin(Microscope):
                         round(px, 6),
                         round(py, 6),
                         round(exposure_time, 6),
-                        self._sample_seed_runtime,
+                        int(self.sample_seed),
                     )
                 )
             )
@@ -521,17 +523,21 @@ class ThermoDigitalTwin(Microscope):
         return {el: val / total for el, val in noisy.items()}
 
     def _place_beam(self, position) -> None:
+        """Place the electron beam at the specified [x, y] coordinates."""
         x, y = position
         self.write_beam_pos([x, y])
 
     def _set_fov(self, fov) -> None:
+        """Set the field of view in meters."""
         self._fov = float(fov)
 
     def _get_stage(self):
+        """Return the current 5-axis stage position."""
         self._sync_stage_from_proxy()
         return self._stage_position
 
     def _move_stage(self, position):
+        """Move the stage to the requested 5-axis vector with optional simulated precision noise."""
         if len(position) != 5:
             raise ValueError("Stage position must have 5 values: [x, y, z, alpha, beta]")
         target = np.array(position, dtype=np.float64)
@@ -553,8 +559,8 @@ class ThermoDigitalTwin(Microscope):
         self._stage_position = target
         self._update_view_cache(force=False)
 
-    @command(dtype_out=str)
     def get_viewport_metadata(self) -> str:
+        """Return JSON-formatted metadata regarding the current simulation viewport and environment state."""
         self._sync_stage_from_proxy()
         fov_ang = self._fov * 1e10
         stage_xyz_ang = self._stage_position[:3] * 1e10
@@ -570,25 +576,16 @@ class ThermoDigitalTwin(Microscope):
             "fov_m": float(self._fov),
             "fov_angstrom": float(fov_ang),
             "imsize": int(self._imsize),
-            "sample_seed": int(self._sample_seed_runtime),
+            "sample_seed": int(self.sample_seed),
+            "sample_size_xy": float(self.sample_size_xy),
+            "sample_size_z": float(self.sample_size_z),
+            "sample_size_xy_generated_angstrom": float(self._world_bounds_ang["x_max"] - self._world_bounds_ang["x_min"]),
+            "sample_size_z_generated_angstrom": float(self._world_bounds_ang["z_max"] - self._world_bounds_ang["z_min"]),
             "viewport_world_angstrom": viewport,
             "world_bounds_angstrom": self._world_bounds_ang,
             "particle_count": len(self._particle_records_base),
         }
         return json.dumps(metadata)
-
-    @command(dtype_in=int, dtype_out=str)
-    def regenerate_sample(self, seed: int) -> str:
-        self._sample_seed_runtime = int(seed)
-        self._generate_sample(seed=self._sample_seed_runtime)
-        return json.dumps(
-            {
-                "status": "ok",
-                "sample_seed": self._sample_seed_runtime,
-                "particle_count": len(self._particle_records_base),
-            }
-        )
-
 
 if __name__ == "__main__":
     ThermoDigitalTwin.run_server()
