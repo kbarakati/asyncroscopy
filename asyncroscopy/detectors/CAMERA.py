@@ -42,6 +42,13 @@ class CAMERA(Device):
         doc="Acquisition width in pixels (should match an AutoScript ImageSize preset)",
     )
 
+    readout_area = attribute(
+        label="Readout Area",
+        dtype=str,
+        access=AttrWriteType.READ_WRITE,
+        doc="Camera readout area preset (e.g. 'Full', 'Half', 'Quarter' — should match an AutoScript ReadoutArea preset)",
+    )
+
     # ------------------------------------------------------------------
     # Initialisation
     # ------------------------------------------------------------------
@@ -53,6 +60,7 @@ class CAMERA(Device):
         # Sensible defaults — operators override via Tango DB or client writes
         self._exposure_time: float = 1e-3   # 1 ms
         self._imsize: int = 1024
+        self._readout_area: str = "Full"
 
         self.info_stream("CAMERA device initialised")
 
@@ -71,6 +79,12 @@ class CAMERA(Device):
 
     def write_imsize(self, value: int) -> None:
         self._imsize = value
+
+    def read_readout_area(self) -> str:
+        return self._readout_area
+
+    def write_readout_area(self, value: str) -> None:
+        self._readout_area = value
 
 
 # ----------------------------------------------------------------------
