@@ -348,7 +348,11 @@ class ThermoMicroscope(Microscope):
         y = float(position[1])
         z = float(position[2])
         alpha = float(math.radians(position[3]))
-        beta = float(math.radians(position[4]))
+
+        if len(position) > 4 and position[4] is not None:
+            beta = float(math.radians(position[4]))
+        else:
+            beta = None
 
         self._microscope.specimen.stage.absolute_move((x, y, z, alpha, beta))
         self._get_stage() # link the proxy with real state
