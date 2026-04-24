@@ -28,6 +28,8 @@ jobs:
       - name: Setup MyST
         run: npm install -g mystmd
       - name: Build site
+        env:
+          BASE_URL: /asyncroscopy
         run: |
           cd docs
           myst build --html
