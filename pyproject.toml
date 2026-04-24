@@ -33,7 +33,7 @@ dependencies = [
     "autoscript-tem-toolkit",
     "thermoscientific-logging",
     "aicspylibczi>=3.3.1",
-    "jupyter-book>=2.0.0
+    "jupyter-book>=2.0.0"
 ]
 
 [tool.setuptools]

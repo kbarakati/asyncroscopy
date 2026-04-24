@@ -31,9 +31,9 @@ project:
         - file: Adding_New_Hardware/add_detector.md
     - title: MCP Server
       children:
-        - file: mcp_server.md
-        - file: BUILD_MCP_SERVER.md
-        - file: ASYNCROSCOPY_MCP_IMPLEMENTATION.md
+        - file: MCP/mcp_server.md
+        - file: MCP/BUILD_MCP_SERVER.md
+        - file: MCP/ASYNCROSCOPY_MCP_IMPLEMENTATION.md
     - file: upcoming_changes.md
 
 site:
