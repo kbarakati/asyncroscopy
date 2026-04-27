@@ -34,7 +34,7 @@ project:
         - file: MCP/mcp_server.md
         - file: MCP/building_an_mcp.md
         - file: MCP/asyncroscopy_mcp.md
-    - title: MCP Server
+    - title: Operation
       children:
         - file: Operation/tango_db_mode.md
     - file: upcoming_changes.md
