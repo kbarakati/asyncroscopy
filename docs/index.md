@@ -2,6 +2,8 @@
 
 Welcome to the Asyncroscopy documentation site.
 
+![Schematic of the functional project structure](../architecture.png)
+
 Use this site to navigate contributor guidance, microscope architecture notes, hardware extension docs, MCP server references, and upcoming changes.
 
 ## Start Here
