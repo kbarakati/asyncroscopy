@@ -258,8 +258,12 @@ def main():
             verbose=False,
         )
 
-        log_stderr(f"[startup] Starting MCP Server. Exported devices: {server.list_devices()}")
-        server.start_http()
+        mcp_host = input("Enter MCP server host (default: 127.0.0.1): ").strip() or "127.0.0.1"
+        mcp_port_input = input("Enter MCP server port (default: 8000): ").strip()
+        mcp_port = int(mcp_port_input) if mcp_port_input else 8000
+
+        log_stderr(f"[startup] Starting MCP Server at {mcp_host}:{mcp_port}. Exported devices: {server.list_devices()}")
+        server.start_http(host=mcp_host, port=mcp_port)
         
     except KeyboardInterrupt:
         log_stderr("\n[shutdown] KeyboardInterrupt received. Shutting down...")
