@@ -237,7 +237,6 @@ class Microscope(Device, metaclass=CombinedMeta):
             "dtype": str(image.dtype),
             "dwell_time": dwell_time,
             "timestamp": time.time(),
-            "fov": self._get_fov(),
             # TODO: add metadata from adorned_image.metadata when using real AutoScript
         }
 
@@ -280,7 +279,6 @@ class Microscope(Device, metaclass=CombinedMeta):
             "dtype": str(image.dtype),
             "exposure_time": exposure_time,
             "timestamp": time.time(),
-            "fov": self._get_fov(),
             "readout_area": readout_area,
             # TODO: move this metadata packing into the _acquire_camera_image method
             # when usingreal AutoScript,to include metadata from adorned_image.metadata
