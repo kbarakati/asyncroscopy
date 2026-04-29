@@ -210,3 +210,5 @@ __marimo__/
 
 PythonPackages-AS-1.15/
 llm-context/
+# MyST build outputs
+_build

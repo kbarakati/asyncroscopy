@@ -2,7 +2,27 @@
 
 The [`MCPServer`](../asyncroscopy/mcp/mcp_server.py#L43) is a bridge between a Tango control system and the Model Context Protocol (MCP). It allows LLM agents to interact directly with hardware by exposing Tango device commands as MCP tools.
 
+
 ---
+## What is MCP?
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open standard 
+that lets AI agents connect to 
+external tools and data sources through a unified interface. Think of it as a standardized 
+API layer specifically designed for LLM interactions.
+
+MCP defines three core primitives that servers can expose:
+- **Tools**: Executable functions the LLM can invoke (like Tango device commands)
+- **Resources**: Read-only data sources (like configuration or device state)  
+- **Prompts**: Reusable message templates that guide LLM interactions
+
+## Why MCP + Asyncroscopy?
+
+Asyncroscopy uses PyTango to control microscope hardware. The MCPServer automatically 
+discovers every Tango device command in your system and exposes them as MCP tools. This 
+means an LLM agent can query detector settings, move the stage, acquire images, and 
+adjust beam parameters — all through natural language.
+The Asyncroscopy MCP server exposes microscopy hardware (via pyTango) to language models. This enables LLM-driven microscopy workflows without direct hardware knowledge.
 
 ## Core Functionality
 
@@ -16,7 +36,7 @@ On startup, the server queries the Tango Database to find all exported devices v
 Each discovered Tango command is wrapped into an MCP tool via [`_create_wrapper()`](../asyncroscopy/mcp/mcp_server.py#L393). The server:
 - Maps Tango types to Python types for parameter validation — see [`_tango_type_to_python()`](../asyncroscopy/mcp/mcp_server.py#L247).
 - **Source-Level Introspection**: Uses [`_get_tango_device_class()`](../asyncroscopy/mcp/mcp_server.py#L294) to search specified Python packages (default: `["asyncroscopy"]`) and `inspect` to retrieve real parameter names via [`_get_param_name()`](../asyncroscopy/mcp/mcp_server.py#L372) and docstrings via [`_get_docstring()`](../asyncroscopy/mcp/mcp_server.py#L330) from the source implementation.
-- Handles `DevEncoded` data by base64-encoding the payload for [JSON-safe transport](#data-transport--encoding) — see [`_normalize_command_result()`](../asyncroscopy/mcp/mcp_server.py#L264).
+- Handles `DevEncoded` data by base64-encoding the payload for [JSON-safe transport](#data-transport-encoding) — see [`_normalize_command_result()`](../asyncroscopy/mcp/mcp_server.py#L264).
 
 ---
 
@@ -79,6 +99,7 @@ class MyCustomMCPServer(MCPServer):
 
 ---
 
+(data-transport-encoding)=
 ## Data Transport & Encoding
 
 Tango `DevEncoded` commands often return binary data (like images). The [`_normalize_command_result()`](../asyncroscopy/mcp/mcp_server.py#L264) method normalizes these into a standard JSON structure:

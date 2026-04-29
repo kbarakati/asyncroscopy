@@ -1,0 +1,51 @@
+# See docs at: https://mystmd.org/guide/frontmatter
+version: 1
+project:
+  id: 00c581f9-e9f0-4bb6-94fa-773c880a9953
+  title: Asyncroscopy Documentation
+  description: Coordination platform for asynchronous microscopy and spectroscopy data analysis
+  keywords: [imaging, microscopy, spectroscopy, TEM]
+  authors:
+    - name: Austin Houston
+      email: ahoust17@vols.utk.edu
+    - name: Utkarsh Pratiush
+      email: upratius@vols.utk.edu
+    - name: Dominick Pelaia
+      email: dpelaia@utk.edu
+    - name: Levi Dunn
+      email: ldunn21@utk.edu
+    - name: Gerd Duscher
+      email: gduscher@utk.edu
+  github: https://github.com/whittlegears/asyncroscopy
+  toc:
+    - file: index.md
+    - title: Contributor Guides
+      children:
+        - file: dev_guide.md
+    - title: Microscopy
+      children:
+        - file: Microscopy/modify_base_microscope.md
+        - file: Microscopy/modify_thermo_microscope.md
+    - title: Adding New Hardware
+      children:
+        - file: Adding_New_Hardware/add_detector.md
+    - title: MCP Server
+      children:
+        - file: MCP/mcp_server.md
+        - file: MCP/building_an_mcp.md
+        - file: MCP/asyncroscopy_mcp.md
+    - title: Operation
+      children:
+        - file: Operation/tango_db_mode.md
+    - file: upcoming_changes.md
+
+site:
+  template: book-theme
+  nav: []
+  options:
+    logo: null
+    404: 404.md
+
+publish:
+  - id: asyncroscopy
+    url: https://whittlegears.mystmd.org
