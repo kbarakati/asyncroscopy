@@ -42,7 +42,7 @@ try:
     from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize, EdsDetectorType
     from autoscript_tem_microscope_client.enumerations import RegionCoordinateSystem, ExposureTimeType
     from autoscript_tem_microscope_client.structures import Region, Rectangle, AdornedSpectrum
-    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings, EdsAcquisitionSettings, RunOptiStemSettings
+    from autoscript_tem_microscope_client.structures import StemAcquisitionSettings, EdsAcquisitionSettings, RunOptiStemSettings, CameraAcquisitionSettings
 
     _AUTOSCRIPT_AVAILABLE = True
 except ImportError:
@@ -117,6 +117,7 @@ class ThermoMicroscope(Microscope):
             "eds":  self.eds_device_address,
             "stage": self.stage_device_address,
             "scan": self.scan_device_address,
+            "camera": self.camera_device_address,
         }
         print(addresses)
         for name, address in addresses.items():
@@ -146,8 +147,6 @@ class ThermoMicroscope(Microscope):
     def _acquire_stem_image(self, imsize: int, dwell_time: float, detector_list: list) -> np.ndarray:
         """
         Call AutoScript acquisition and return numpy array.
-
-        Falls back to a simulated image when AutoScript is unavailable.
         """
         if self._microscope is not None:
             # check detectors in detector_list
@@ -158,6 +157,21 @@ class ThermoMicroscope(Microscope):
             adorned = self._microscope.acquisition.acquire_stem_image(detector_type, imsize, dwell_time)
             # adorned.metadata TODO get this and pass it on
             return adorned.data
+        
+    def _acquire_camera_image(self, imsize: int, exposure_time: float, detector: str, readout_area: str) -> np.ndarray:
+        """
+        Call AutoScript acquisition and return numpy array.
+        this is the advanced version
+        """
+        
+        detector = 'BM-Ceta' # or "Flucam"
+
+        settings = CameraAcquisitionSettings(camera_detector=detector, size=imsize,
+            exposure_time=exposure_time, fixed_readout_area=readout_area, frame_combining=1)
+        adorned = self._microscope.acquisition.acquire_camera_image_advanced(settings)
+        image = adorned.data
+        return image
+
 
     def _acquire_stem_image_advanced(
         self,
@@ -268,13 +282,13 @@ class ThermoMicroscope(Microscope):
 
     def _caibrate_screen_current(self) -> None:
         original_gun_lens = self._microscope.optics.monochromator.focus
-        gun_lens_series = np.linspace(-40, 100, 15)
+        gun_lens_series = np.linspace(10, 150, 15)
 
         # series of measurements
         current_series = []
         for val in gun_lens_series:
-            self._microscope.optics.monochromator.focus = val # original_gun_lens + val
-            time.sleep(2)
+            self._microscope.optics.monochromator.focus = val
+            time.sleep(1)
             screen_current = self._microscope.detectors.screen.measure_current()
             current_series.append(screen_current)
         current_series = np.array(current_series) * 1e12
@@ -334,7 +348,11 @@ class ThermoMicroscope(Microscope):
         y = float(position[1])
         z = float(position[2])
         alpha = float(math.radians(position[3]))
-        beta = float(math.radians(position[4]))
+
+        if len(position) > 4 and position[4] is not None:
+            beta = float(math.radians(position[4]))
+        else:
+            beta = None
 
         self._microscope.specimen.stage.absolute_move((x, y, z, alpha, beta))
         self._get_stage() # link the proxy with real state
@@ -348,10 +366,11 @@ class ThermoMicroscope(Microscope):
         """Apply image shift in meters."""
         x_shift = float(shift[0])
         y_shift = float(shift[1])
+        print(shift)
         try:
-            self._microscope.optics.deflectors.image_shift = (x_shift, y_shift)
+            self._microscope.optics.deflectors.beam_shift = (x_shift, y_shift)
         except Exception as e:
-            self.error_stream(f"Failed to set image shift: {e}")
+            self.error_stream(f"Failed to set beam shift: {e}")
 
 # ----------------------------------------------------------------------
 # Server entry point

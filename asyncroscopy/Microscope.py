@@ -44,7 +44,6 @@ class Microscope(Device, metaclass=CombinedMeta):
     # Device properties — configure in Tango DB per deployment
     # ------------------------------------------------------------------
 
-
     scan_device_address = device_property(
         dtype=str,
         doc="Tango device address for the SCAN settings device. "
@@ -64,6 +63,13 @@ class Microscope(Device, metaclass=CombinedMeta):
         doc="Tango device address for the STAGE settings device. "
             "DB mode: 'test/hardware/stage' "
             "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/stage#dbase=no'",
+    )
+
+    camera_device_address = device_property(
+        dtype=str,
+        doc="Tango device address for the CAMERA settings . "
+            "DB mode: 'test/detector/camera' "
+            "No-DB mode: 'tango://127.0.0.1:8888/test/nodb/camera#dbase=no'",
     )
     testing_mode_bool = device_property(dtype=bool, 
                                         default_value=False,
@@ -223,18 +229,63 @@ class Microscope(Device, metaclass=CombinedMeta):
         dwell_time=scan.dwell_time
         imsize=scan.imsize
 
-        adorned_image = self._acquire_stem_image(imsize, dwell_time, ['haadf'])
+        image = self._acquire_stem_image(imsize, dwell_time, ['haadf'])
 
         metadata = {
             "detector": 'haadf',
             "shape": [imsize, imsize],
-            "dtype": str(adorned_image.dtype),
+            "dtype": str(image.dtype),
             "dwell_time": dwell_time,
             "timestamp": time.time(),
             # TODO: add metadata from adorned_image.metadata when using real AutoScript
         }
 
-        return json.dumps(metadata), adorned_image.tobytes()
+        return json.dumps(metadata), image.tobytes()
+    
+
+    @command(dtype_out=DevEncoded)
+    def get_camera_image(self) -> tuple[str, bytes]:
+        """
+        Acquire a single camera image from the named detector.
+
+        Parameters
+        ----------
+        detector_name:
+            Name of the detector, e.g. "BM-Ceta". Must match a key in
+            self._detector_proxies.
+
+        Returns
+        -------
+        DevEncoded = (json_metadata, raw_bytes)
+            json_metadata includes: shape, dtype, dwell_time, detector,
+            timestamp, and any other relevant metadata.
+            raw_bytes is the flat numpy array bytes; reshape using shape from metadata.
+        """
+
+        # check active detectors
+        camera = self._detector_proxies.get("camera")
+
+        # Read settings from the detector
+        exposure_time=camera.exposure_time
+        imsize=camera.imsize
+        readout_area=camera.readout_area
+
+        image = self._acquire_camera_image(imsize=imsize, exposure_time=exposure_time,
+                                           detector='BM-Ceta', readout_area=readout_area)
+
+        metadata = {
+            "detector": 'Ceta',
+            "shape": [imsize, imsize],
+            "dtype": str(image.dtype),
+            "exposure_time": exposure_time,
+            "timestamp": time.time(),
+            "readout_area": readout_area,
+            # TODO: move this metadata packing into the _acquire_camera_image method
+            # when usingreal AutoScript,to include metadata from adorned_image.metadata
+        }
+
+        return json.dumps(metadata), image.tobytes()
+
 
     @command(dtype_in=('str',), dtype_out=str)
     def get_images(self, detector_names: list[str]) -> str:
@@ -407,6 +458,9 @@ class Microscope(Device, metaclass=CombinedMeta):
     @abstractmethod
     def _acquire_stem_image_advanced():
         print("Get image with more flexible settings")
+        pass
+    def _acquire_camera_image():
+        # define in the inherit class
         pass
 
     def _place_beam():
