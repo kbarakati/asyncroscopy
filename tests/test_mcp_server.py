@@ -374,7 +374,7 @@ class TestMCPSerialization:
 
         assert isinstance(normalized, dict)
         assert normalized["encoding"] == "base64"
-        assert normalized["metadata"] == '{"shape":[2,2],"dtype":"uint8"}'
+        assert normalized["metadata"] == {"shape": [2, 2], "dtype": "uint8"}
         assert isinstance(normalized["payload"], str)
         assert base64.b64decode(normalized["payload"]) == b"\x00\x01\xff\x10"
 
@@ -384,3 +384,50 @@ class TestMCPServerTypeMapping:
         assert MCPServer._tango_type_to_python(tango.CmdArgType.DevVarDoubleArray) == list[float]
         assert MCPServer._tango_type_to_python(tango.CmdArgType.DevUChar) == np.uint8
         assert MCPServer._tango_type_to_python(tango.CmdArgType.DevEncoded) is dict
+
+class TestMCPToolInvocation:
+    def test_wrapper_supports_positional_and_keyword(self, monkeypatch) -> None:
+        # Mock Database and DeviceProxy to avoid connection errors
+        # Must patch where it is used (imported)
+        monkeypatch.setattr("asyncroscopy.mcp.mcp_server.Database", lambda host, port: None)
+        
+        # Mock objects for wrapping
+        def mock_func(val):
+            return val
+            
+        cmd_info = type('CommandInfo', (), {
+            'in_type': tango.CmdArgType.DevString,
+            'out_type': tango.CmdArgType.DevString,
+            'in_type_desc': 'some string',
+            'out_type_desc': 'result'
+        })
+        
+        server = MCPServer("test", "localhost", 1234)
+        wrapper = server._create_wrapper(mock_func, cmd_info, "MyCmd", "MyClass")
+        
+        # 1. Positional call
+        assert wrapper("hello") == "hello"
+        
+        # 2. Keyword call with correct name
+        import inspect
+        sig = inspect.signature(wrapper)
+        param_name = list(sig.parameters.keys())[0]
+        assert wrapper(**{param_name: "world"}) == "world"
+
+    def test_void_wrapper_supports_no_args(self, monkeypatch) -> None:
+        monkeypatch.setattr("asyncroscopy.mcp.mcp_server.Database", lambda host, port: None)
+        
+        def mock_func():
+            return "done"
+            
+        cmd_info = type('CommandInfo', (), {
+            'in_type': tango.CmdArgType.DevVoid,
+            'out_type': tango.CmdArgType.DevString,
+            'in_type_desc': '',
+            'out_type_desc': ''
+        })
+        
+        server = MCPServer("test", "localhost", 1234)
+        wrapper = server._create_wrapper(mock_func, cmd_info, "VoidCmd", "MyClass")
+        
+        assert wrapper() == "done"

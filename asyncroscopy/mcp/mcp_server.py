@@ -14,9 +14,11 @@ import inspect
 import importlib
 import pkgutil
 import base64
+import json
 from inspect import signature, getdoc
 from typing import Any, Dict, Callable, Annotated
 from pydantic import Field
+import traceback
 
 from tango import Database, DeviceProxy, CommandInfo, CmdArgType
 from tango.utils import (
@@ -271,9 +273,14 @@ class MCPServer:
 
         metadata_raw, payload_raw = result
         if isinstance(metadata_raw, bytes):
-            metadata = metadata_raw.decode("utf-8", errors="replace")
+            metadata_str = metadata_raw.decode("utf-8", errors="replace")
         else:
-            metadata = str(metadata_raw)
+            metadata_str = str(metadata_raw)
+
+        try:
+            metadata = json.loads(metadata_str)
+        except (json.JSONDecodeError, TypeError):
+            metadata = metadata_str
 
         if isinstance(payload_raw, memoryview):
             payload_bytes = payload_raw.tobytes()
@@ -359,11 +366,11 @@ class MCPServer:
             in_desc = cmd_info.in_type_desc
             out_desc = cmd_info.out_type_desc
 
-            lines.append(f"Input Type: {self.in_type.name}")
+            lines.append(f"Input Type: {in_type.name}")
             if in_desc:
                 lines.append(f"Input Description: {in_desc}")
 
-            lines.append(f"Output Type: {self.out_type.name}")
+            lines.append(f"Output Type: {out_type.name}")
             if out_desc:
                 lines.append(f"Output Description: {out_desc}")
 
@@ -423,7 +430,9 @@ class MCPServer:
         py_return_type = self._tango_type_to_python(out_type)
 
         if in_desc and in_desc.lower() not in ("uninitialised", "none", "", "uninitialized"):
-            arg_type = Annotated[py_type, Field(description=in_desc)]
+            # Sanitize description - remove newlines to prevent JSON schema breakage
+            clean_desc = in_desc.replace("\n", " ").strip()
+            arg_type = Annotated[py_type, Field(description=clean_desc)]
         else:
             arg_type = py_type
 
@@ -431,32 +440,46 @@ class MCPServer:
             def wrapper():
                 result = func()
                 return self._normalize_command_result(out_type, result)
+
+            params = []
             wrapper.__annotations__ = {"return": py_return_type}
         else:
             param_name = self._get_param_name(dev_class, command_name)
 
-            # Build the wrapper with the real param name so pydantic/FastMCP
-            # advertises the correct keyword in the tool schema.
-            ns: dict = {
+            ns = {
                 "func": func,
+                "self": self,
                 "arg_type": arg_type,
                 "py_return_type": py_return_type,
-                "self": self,
                 "out_type": out_type,
             }
-            # FastMCP inspects the actual parameter *name* in the function signature
-            # to build its JSON schema (e.g. "exposure_time" not generic "arg").
-            # Python's exec() is the only way to set a runtime-determined param name
-            # on a function — functools.wraps and __wrapped__ don't affect introspection.
-            exec(
-                f"def wrapper({param_name}: arg_type) -> py_return_type:\n"
-                f"    result = func({param_name})\n"
-                f"    return self._normalize_command_result(out_type, result)\n",
-                ns,
-            )
-            wrapper = ns["wrapper"]
-            wrapper.__annotations__ = {param_name: arg_type, "return": py_return_type}
 
+            # Use exactly the named parameter. Python naturally supports both 
+            # wrapper(val) and wrapper(param=val) for standard named parameters.
+            # This satisfies strict introspection in frameworks like smolagents.
+            exec_str = (
+                f"def wrapper({param_name}: arg_type) -> py_return_type:\n"
+                f"    return self._normalize_command_result(out_type, func({param_name}))"
+            )
+            exec(exec_str, ns)
+            wrapper = ns["wrapper"]
+
+            params = [
+                inspect.Parameter(
+                    param_name,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    annotation=arg_type,
+                )
+            ]
+
+        wrapper.__annotations__ = {
+            p.name: p.annotation for p in params
+        }
+        wrapper.__annotations__["return"] = py_return_type
+
+        wrapper.__signature__ = inspect.Signature(
+            parameters=params, return_annotation=py_return_type
+        )
         wrapper.__doc__ = doc
         
         # Set unique function name for FastMCP tool registration
@@ -562,6 +585,7 @@ class MCPServer:
                 except Exception as e:
                     if self.verbose:
                         print(f"Failed to wrap {dev_class}.{command_name}: {e}")
+                        traceback.print_exc()
         
         # Print all registered MCP tools
         if print_summary:
