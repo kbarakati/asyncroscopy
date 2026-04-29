@@ -3,7 +3,7 @@ name = "asyncroscopy"
 version = "0.1.0"
 description = "Asyncroscopy: asynchronous control framework for STEM automation"
 readme = "README.md"
-requires-python = ">3.11"
+requires-python = ">=3.12"
 dependencies = [
     "colorama>=0.4.6",
     "defusedxml>=0.7.1",
